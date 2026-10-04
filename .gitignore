@@ -1,2 +1,6 @@
 /target
 learning.md
+.wrangler/
+build/
+.dev.vars
+.agents/
