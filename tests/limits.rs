@@ -3,7 +3,7 @@ use inscope::count_words;
 use inscope::validate_message;
 
 use inscope::utf16_len;
-use inscope::{MAX_MESSAGE_BYTES, MAX_USER_UTF16, MAX_WORDS};
+use inscope::{MAX_USER_BYTES, MAX_USER_UTF16, MAX_USER_WORDS};
 
 #[test]
 fn test_count_words() {
@@ -17,13 +17,22 @@ fn test_count_words() {
 #[test]
 fn test_validate_message() {
     assert_eq!(validate_message(""), Err(MessageError::Empty));
-    assert_eq!(validate_message("hello"), Ok(()));
-    assert_eq!(validate_message("hello world"), Ok(()));
-    assert_eq!(validate_message("hello world!"), Ok(()));
     assert_eq!(validate_message(" "), Err(MessageError::Empty));
-    let long_message = "a".repeat(MAX_MESSAGE_BYTES + 1);
-    assert_eq!(validate_message(&long_message), Err(MessageError::TooLong));
-    let too_many_words = "a ".repeat(MAX_WORDS + 1);
+    assert_eq!(validate_message("hello"), Ok(()));
+
+    let too_long_bytes = "a".repeat(MAX_USER_BYTES + 1);
+    assert_eq!(
+        validate_message(&too_long_bytes),
+        Err(MessageError::TooLongBytes)
+    );
+
+    let too_many_units = "🙂".repeat(MAX_USER_UTF16 / 2 + 1); // 502 units, 1004 bytes
+    assert_eq!(
+        validate_message(&too_many_units),
+        Err(MessageError::TooManyUnits)
+    );
+
+    let too_many_words = "a ".repeat(MAX_USER_WORDS + 1);
     assert_eq!(
         validate_message(&too_many_words),
         Err(MessageError::TooManyWords)

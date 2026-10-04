@@ -1,8 +1,5 @@
 use worker::{Context, Env, Method, Request, Response, event};
 
-pub const MAX_WORDS: usize = 250;
-pub const MAX_MESSAGE_BYTES: usize = 4096;
-
 pub const MAX_USER_WORDS: usize = 80;
 pub const MAX_USER_UTF16: usize = 500;
 pub const MAX_USER_BYTES: usize = 2048;
@@ -14,7 +11,8 @@ pub mod security;
 pub enum MessageError {
     Empty,
     TooManyWords,
-    TooLong,
+    TooManyUnits,
+    TooLongBytes,
 }
 
 #[event(fetch)]
@@ -44,12 +42,16 @@ pub fn utf16_len(text: &str) -> usize {
 
 pub fn validate_message(text: &str) -> Result<(), MessageError> {
     let count = count_words(text);
-    let len = text.len();
     if count == 0 {
         return Err(MessageError::Empty);
-    } else if len > MAX_MESSAGE_BYTES {
-        return Err(MessageError::TooLong);
-    } else if count > MAX_WORDS {
+    }
+    if text.len() > MAX_USER_BYTES {
+        return Err(MessageError::TooLongBytes);
+    }
+    if utf16_len(text) > MAX_USER_UTF16 {
+        return Err(MessageError::TooManyUnits);
+    }
+    if count > MAX_USER_WORDS {
         return Err(MessageError::TooManyWords);
     }
     Ok(())
