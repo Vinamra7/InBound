@@ -2,7 +2,8 @@ use inscope::MessageError;
 use inscope::count_words;
 use inscope::validate_message;
 
-use inscope::{MAX_MESSAGE_BYTES, MAX_WORDS};
+use inscope::utf16_len;
+use inscope::{MAX_MESSAGE_BYTES, MAX_USER_UTF16, MAX_WORDS};
 
 #[test]
 fn test_count_words() {
@@ -27,4 +28,13 @@ fn test_validate_message() {
         validate_message(&too_many_words),
         Err(MessageError::TooManyWords)
     );
+}
+
+#[test]
+fn test_utf16_len() {
+    assert_eq!(utf16_len("hello"), 5);
+    assert_eq!(utf16_len("🙂"), 2);
+    assert_eq!("🙂".len(), 4);
+    assert_eq!(utf16_len(""), 0);
+    assert_eq!(MAX_USER_UTF16, 500);
 }

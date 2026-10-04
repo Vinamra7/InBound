@@ -1,3 +1,7 @@
+use crate::{MAX_MESSAGE_BYTES, MAX_WORDS};
+use serde::Deserialize;
+
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AssistantConfig {
     pub allowed_models: Vec<String>,
     pub max_words: usize,
@@ -24,7 +28,7 @@ pub fn load_default() -> AssistantConfig {
             "openai/gpt-6-luna".to_string(),
             "z-ai/glm-5.3-flash".to_string(),
         ],
-        max_words: 250,
-        max_bytes: 4096,
+        max_words: MAX_WORDS,
+        max_bytes: MAX_MESSAGE_BYTES,
     }
 }

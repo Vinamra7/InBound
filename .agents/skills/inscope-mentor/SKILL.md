@@ -50,22 +50,27 @@ Reusable gateway must not hardcode identity or employers.
 One exchange = one user message -> one assistant response. Allow up to 10 admitted user messages.
 
 Rules:
-- Max 250 words per submitted message.
-- 8 KiB request-body limit, 4 KiB UTF-8 message limit.
+- Initial portfolio defaults: max 80 words and 500 UTF-16 code units per user message, matching frontend JavaScript `text.length`. In Rust, count `encode_utf16()` units rather than bytes; keep a separate UTF-8 byte bound.
+- Max 2 KiB UTF-8 per user message, 8 KiB UTF-8 and 2,000 UTF-16 code units per submitted assistant-history entry, and 32 KiB total HTTP request body. Bound the body while reading, including requests without Content-Length.
+- Accept at most 9 previous user/assistant pairs (18 history entries) plus the new user question. Apply per-entry limits and a combined prompt budget; individually valid entries can still exceed the total budget.
 - Whitespace-separated word count initially.
 - Reject empty/oversized before reserving allowance.
 - Limit answer to configurable small provider token budget, initially 400 output tokens.
 - Verify provider reasoning/output-limit semantics for selected models.
 
-On 10th admitted message: complete it, set `blocked_until` = server time + 24h, reject new messages until then, return remaining allowance and reset time. Message: "You've reached the 10-message limit. You can chat again after [time]. My resume and contact links are still available." Do not call this timeout.
+On atomic admission of the 10th user message, set `count = 10` and `blocked_until = coordinator server time + 24h`. Allow that tenth attempt to finish, reject subsequent new requests before that deadline, and return remaining allowance/reset time. Message: "You've reached the 10-message limit. You can chat again after [time]. My resume and contact links are still available." Do not call this timeout.
 
-After cooldown: new conversation, reset count, remove history, keep same anonymous identity where valid.
+At or after the cooldown deadline, atomically roll the allowance over once: reset count to zero, clear the block and start a new generation. This can happen while serving authenticated status or preparing admission; the first admitted new-generation question increments zero to one. Keep the same anonymous identity where valid. The browser clears its previous conversation for the new generation. An 11th rejected request must never extend the cooldown.
+
+Use server-generated Unix timestamps, not browser timestamps, timezone strings or request-arrival times supplied by clients. All quota decisions use the same Durable Object coordinator's clock and durable state, even when public Workers receive traffic in different regions. UTC/Unix instants avoid timezone differences; do not claim computers have perfectly identical clocks.
+
+Cooldown is a logical deadline, not a TTL that deletes the visitor record. Check it on every request even if cleanup alarms are late. Keep quota/credential records independently of browser conversation resets; never expire a record before an active block ends.
 
 Reload/model change/reopen terminal/clearing UI must not reset backend allowance. Count out-of-scope and upstream failures once admitted. Validation failures, invalid credentials, rejected duplicates do not consume exchange.
 
 ## 5. Architecture
 
-Vercel serves UI -> browser calls Rust Cloudflare Worker directly over HTTPS -> Worker validates, verifies credentials, coordinates limits, calls relevance provider, calls answer provider when allowed <-> Durable Object with persistent storage for visitor records, history, atomic counters, dedup records.
+Vercel serves UI -> browser calls Rust Cloudflare Worker directly over HTTPS with current message and browser-owned history -> Worker validates, verifies credentials, coordinates limits, calls relevance provider, calls answer provider when allowed <-> Durable Object with persistent storage for visitor identities, atomic counters, cooldowns and dedup records. Do not store the conversation transcript in the backend.
 
 External: Turnstile, verified relevance provider (user ref: https://docs.typesafe.ai/primitives - verify real API, do not invent SDK), OpenRouter.
 
@@ -79,25 +84,35 @@ Verify workers-rs Durable Object support and migration config first before build
 
 ## 6. Anonymous identity and session
 
-No login. Server-generated >=256-bit opaque bearer credential, store hash not raw token. Record holds conversation state.
+No login. Server-generated >=256-bit opaque bearer credential, store hash not raw token. Record holds allowance/security state, not conversation history.
 
 Store limited credential in localStorage, explain XSS risk, render output as text, avoid unsafe HTML, recommend CSP. Never in URLs/logs/analytics. 30-day lifetime initially. No third-party cookies.
 
 Clearing storage/new browser = new identity. Document honestly, not per-person ban.
 
-POST /session: cheap checks + issuance throttling, server-side Turnstile validation with hostname/action check, respect token expiry/single-use, generate credential, persist hash + state, return credential + status. Reuse valid credential, do not mint per open. Enforce per-network and global issuance limits.
+POST /session: cheap checks + issuance throttling, server-side Turnstile validation with hostname/action check, respect token expiry/single-use, generate credential, persist hash + state, return credential + status. Reuse valid credential, do not mint per tab/open/chat reset. Tabs on the same portfolio origin reuse the localStorage credential. Coordinate initial issuance across tabs where practical; issuance/IP/global limits remain required for fresh-identity attempts.
+
+Turnstile is bot verification, not Cloudflare Tunnel and not an anonymous-user identifier. The frontend passes the public site key and action `chat` to Cloudflare's widget. Widget settings live in Cloudflare; the site key is safe in public code/environment configuration. The portfolio uses Managed mode, `appearance: interaction-only`; acquire a token on terminal interaction, lock typed chat while verification is pending, and hide the challenge panel on success. Local contact buttons remain available.
+
+The browser sends the resulting short-lived Turnstile token to POST /session, e.g. `{turnstile_token: "..."}`. The Worker calls Cloudflare Siteverify with its private Turnstile secret and requires success, action exactly `chat`, and the configured exact frontend hostname. Production must not allow localhost; local development can have its own expected hostname. Verify current expiry/single-use rules from official docs. Never call Siteverify with a secret from the browser, log tokens, or treat the frontend callback as server verification.
+
+Only after Siteverify succeeds does InScope issue its own anonymous bearer credential. That credential, not the Cloudflare token or site key, accompanies later /chat calls. Reset/reacquire a Turnstile token after a redemption attempt; do not redeem one token for every chat message. A valid InScope credential can be reused until expiry without creating a new allowance. Handle expiry/error/retry safely; test keys and verification bypasses must not reach production.
 
 ## 7. Persistent state and concurrency
 
-One DO coordinator per app for v0.1. Document not unlimited-scale. Never mix histories.
+One DO coordinator per app for v0.1. Document not unlimited-scale. Isolate each visitor's quota/idempotency records; never return another visitor's cached result.
 
-Visitor: credential hash, creation/expiry, generation ID, exchange count, cooldown deadline, bounded history, in-flight + lease expiry.
-Request: visitor ID + generation, client request ID, hash of message+model, status, bounded response, expiry.
+Visitor: credential hash, creation/expiry, generation ID, exchange count, cooldown deadline, in-flight + lease expiry. No history field.
+Request: visitor ID + generation, client request ID, hash of validated message+history+model, status, bounded response, expiry. A short-lived response cache supports idempotent retries; it is not a saved transcript and must not be used to reconstruct conversation history.
 Quotas: global UTC-day admitted AI requests, short-window visitor throttles, short-lived IP-hash throttles, issuance counters.
 
 Use persistent storage + atomic transactions for admission. No Worker globals or KV as authoritative quota.
 
-Atomic admission: validate visitor/cooldown, resolve duplicate IDs, reject already-active for visitor, check visitor+global allowances, increment counters, create reservation + lease, set 24h cooldown if exchange ten, return trusted context. Do not hold transaction while awaiting AI. Different visitors progress concurrently. One active request per visitor initially, second distinct = busy. Lease longer than total provider deadline. Generation/request IDs prevent stale overwrite. Lease must expire after crash. No auto-replay of ambiguous paid request. Admission charged after crash/failure.
+Atomic admission: resolve duplicate IDs before cooldown rejection; validate credential, generation and cooldown (reset expired cooldown atomically); reject already-active for visitor; check visitor+global allowances; increment counters; create reservation + lease; set 24h cooldown if exchange ten; return admission/status, not history. Validate the full payload before reservation. Do not hold transaction while awaiting AI. Different visitors progress concurrently. One active request per visitor initially, second distinct = busy. Lease longer than total provider deadline. Generation/request IDs prevent stale overwrite. Lease must expire after crash. No auto-replay of ambiguous paid request. Admission charged after crash/failure.
+
+On cooldown rollover, GET /session returns the new generation without consuming an attempt. If POST /chat carries the old generation, return stale_generation plus current status without calling providers or reserving allowance; the frontend clears old history before a deliberate new send. Duplicate results from the prior generation may still be retrieved within retention, but cannot execute again. Client-provided generation IDs only identify a server-issued generation; they never trigger a reset.
+
+Cleanup TTLs apply to expired credentials, old dedup results, leases and throttle windows. Use server expiry fields plus bounded Durable Object alarm cleanup; alarms are not the authority for permission checks. Keep visitor identity alive through its active cooldown and keep the tenth request's retry result for the required bounded retention. Check expiry on access and reschedule cleanup safely. No conversation-history TTL is needed because the backend does not store history.
 
 ## 8. Idempotency
 
@@ -109,31 +124,35 @@ Check duplicate retrieval before cooldown rejection so tenth result retrievable.
 
 ## 9. Abuse and cost controls
 
-Initial: 10 admitted/conversation, 24h cooldown after tenth, 5/min/visitor, generous IP throttle, 200 global UTC-day, separate issuance limits, at most one classifier + one answer call per admitted request, no auto-retries/failover initially.
+Initial: 10 admitted per visitor allowance generation across all tabs/chats/models, 24h cooldown after tenth, 5/min/visitor, generous IP throttle, 200 global UTC-day, separate issuance limits, at most one classifier + one answer call per admitted request, no auto-retries/failover initially. Reserve before calling the classifier because classification also costs money. Out-of-scope results and upstream failures consume the admitted attempt; malformed/oversized requests do not.
 
 Global covers all aliases/visitors. Model change cannot bypass. Use Cloudflare client-IP metadata, not caller header. IPs are signals not identities. Persist only short-lived keyed hashes. Fail closed if quota storage unavailable. Cap is not monetary cap. Keep I/O bounds + provider spending limits. Rejected HTTP may still cost platform requests.
 
 ## 10. Relevance and answer calls
 
-Relevance: verify real HTTP API/auth/format. Classifier receives owner scope, approved knowledge/bounded summary, trusted history, current untrusted question. Parse validated decision, not substring. Malformed/timeout/unavailable fails closed, no answer call. Probabilistic filter, not injection guarantee.
+Relevance: verify real Jev/relevance-provider HTTP API/auth/format. Classifier receives server-owned scope and approved knowledge plus validated but untrusted browser history and the current question. Include bounded history to interpret follow-ups such as "explain that further". Parse validated decision, not substring. Malformed/timeout/unavailable fails closed, no answer call. Probabilistic filter, not injection guarantee.
 
-Answer: OpenRouter documented HTTP API with verified model IDs. Browser selects owner alias only, server maps to ID. Visitor cannot supply URLs, credentials, system prompts, unrestricted settings, arbitrary IDs. Build from system rules + owner knowledge + server history + current question. Grounded short answers, no invention. No tools/browsing/shell/URL fetch. Bounded non-streaming JSON for v0.1. Explicit deadlines/output limits/byte limits. Safe errors, no raw provider/credentials.
+Answer: OpenRouter documented HTTP API with verified model IDs. Browser selects owner alias only, server maps to ID. Visitor cannot supply URLs, credentials, system prompts, unrestricted settings, arbitrary IDs. Build from server-owned system rules + owner knowledge + validated untrusted browser history + current question. Treat previous assistant entries as conversation context, not verified facts or authority; owner knowledge is the factual source. Grounded short answers, no invention. No tools/browsing/shell/URL fetch. Bounded non-streaming JSON for v0.1. Explicit deadlines/output limits/byte limits. Safe errors, no raw provider/credentials.
 
-## 11. History
+## 11. Browser-owned history
 
-Keep full short conversation to 10-exchange limit. No summaries/embeddings/vector DB. Bound UTF-8 bytes/message, output tokens/stored bytes, knowledge size, total prompt size, model context capacity. Reject clearly if exceeded, do not silently drop. Never trust client messages array. Persist successful exchanges in order. Failed attempts are outcomes, do not invent answers. Delete history when cooldown begins after final finalized, or after inactivity-retention. Keep quota/dedup records. Cleanup via DO alarms or verified bounded mechanism. Never erase active block early.
+The UI owns the displayed conversation and sends previous turns with every new question. Backend does not save or recover transcripts. No summaries/embeddings/vector DB. Validate history as an array of at most 9 complete alternating user/assistant pairs, starting with user and ending with assistant; an empty history is valid. Reject all system/developer/tool roles, non-text content, unknown fields and incomplete/misordered entries. Limit each prior user entry like the current message; separately bound assistant entries, total body bytes, owner knowledge and the complete provider prompt/context budget. Reject oversized requests clearly rather than silently truncating.
+
+Client history is untrusted even when its lengths/roles are valid: visitors can forge previous replies or omit turns. Accept this documented tradeoff for a read-only portfolio assistant with no tools/privileged actions. Never infer user identity, count, generation, permissions or factual owner information from submitted history. No history-length equality check against the authoritative count: resetting the UI or omitting failed turns may change displayed history, but must not replenish allowance. Server-owned prompts and knowledge cannot be overridden by history. Do not claim bounds make the transcript authentic or guarantee injection protection.
+
+The browser appends successful exchanges in order. Reject responses and provider errors are handled explicitly; do not fabricate successful replies. If a visitor clears the UI or opens a new chat, history may be empty but the same credential/count/cooldown remains. When the backend starts a new allowance generation after cooldown, clear browser history before a new-generation question; stale-generation requests should return current generation/status without reserving an attempt.
 
 ## 12. Minimal REST contract
 
 - GET /health
 - POST /session
-- GET /session authenticated for status/history recovery
-- POST /chat authenticated, e.g. {request_id, message, model: default} -> {request_id, kind: answer, message, remaining, blocked_until}
-- Errors: invalid_request, unauthorized, message_too_long, request_in_progress, request_id_conflict, conversation_limit, rate_limited, global_quota_exhausted, provider_unavailable with appropriate HTTP + Retry-After + absolute retry timestamp where meaningful. Client cannot set remaining/identity/history/deadlines. Cache-Control: no-store for session/chat.
+- GET /session authenticated for allowance/cooldown/current-generation status only; no history recovery.
+- POST /chat authenticated, e.g. {request_id, generation_id, message, history: [{role: user, content: "..."}, {role: assistant, content: "..."}], model: default} -> {request_id, generation_id, kind: answer, message, remaining, blocked_until}. Quotes/types in actual JSON DTOs must be valid; examples here describe the shape.
+- Errors: invalid_request, unauthorized, message_too_long, request_in_progress, request_id_conflict, stale_generation, conversation_limit, rate_limited, global_quota_exhausted, provider_unavailable with appropriate HTTP + Retry-After + absolute retry timestamp where meaningful. Client supplies history and echoes a server-issued generation; it cannot choose remaining allowance, visitor identity or deadlines. Cache-Control: no-store for session/chat.
 
 ## 13. Frontend integration
 
-Vercel terminal loads without AI, init bot check on interact, reuse credential, pending state, disable resend while awaiting, show remaining, show cooldown deadline, keep contact/resume always, no auto-retry of failed paid with new IDs. Contact clicks local, no allowance. Typed contact questions via /chat follow policy. CORS exact origins/methods/headers, handle OPTIONS without credential, include CORS on errors. CORS does not replace auth/quotas.
+Vercel terminal loads without AI, init bot check on interact, reuse credential across tabs, own/send bounded history, pending state, disable resend while awaiting, show remaining, show cooldown deadline, keep contact/resume always, no auto-retry of failed paid with new IDs. A UI conversation reset never deletes the credential or resets server allowance. Contact clicks local, no allowance. Typed contact questions via /chat follow policy. Current portfolio UI uses 80 words/500 UTF-16 units and at most five rendered lines, Enter to send/Shift+Enter for newline, clears overflow and shows "Message too long" for 2.5 seconds. Rendered-line limits are a frontend concern, not a server validation rule because viewport widths vary. CORS exact origins/methods/headers, handle OPTIONS without credential, include CORS on errors. CORS does not replace auth/quotas.
 
 ## 14. Code structure
 
@@ -192,11 +211,11 @@ Keep credentials exclusively in Worker Secrets and ignored local `.dev.vars`. `.
 
 ### One message through the application
 
-1. Browser sends only a request ID, new message and allowed model alias with its anonymous bearer credential.
+1. Browser sends a request ID, server-issued generation ID, new message, browser-owned history and allowed model alias with its anonymous bearer credential. On cooldown expiry, obtain current generation/status and clear old UI history; do not automatically replay an old paid request.
 2. `api.rs` validates HTTP method, origin, JSON schema and body limits.
-3. `state.rs` atomically checks identity, duplicates, in-flight work, cooldown and all allowances; reserves the attempt and returns trusted history.
+3. `state.rs` atomically checks identity, duplicates, in-flight work, cooldown and all allowances; reserves the attempt and returns quota status. It does not store or retrieve conversation history.
 4. `chat.rs` calls `providers.rs` for relevance. Unrelated input receives a fixed rejection; invalid/unavailable classification fails closed.
-5. Relevant questions go to OpenRouter with owner rules, approved knowledge and server-stored history. No arbitrary user tools or upstream URLs.
+5. Relevant questions go to OpenRouter with server-owned rules, approved knowledge and bounded untrusted browser history. No arbitrary user tools or upstream URLs.
 6. `state.rs` finalizes only the matching request/generation, persists the bounded result and releases the lease.
 7. `api.rs` returns safe JSON with remaining allowance and any cooldown deadline. Contact buttons remain local in the frontend.
 
@@ -208,7 +227,7 @@ Read the project's `PROGRESS.md` and learning log when resuming. Keep records gr
 
 ## 15. Verification and release
 
-Deterministic mocks in tests only, never silent production fallback. Required tests: 10 admitted then blocked, cooldown boundary via server time, tenth retrievable, reload/model change preserves allowance, UI clear does not clear backend, duplicate calls provider at most once, payload mismatch rejected, concurrent near global cap cannot exceed, isolation between visitors, same-visitor concurrency predictable, counters survive restart, stale completion blocked, invalid/replayed Turnstile rejected, I/O bounds enforced, invalid classifier blocked, secrets never in errors/logs, cleanup preserves blocks, dev bypass never in prod.
+Deterministic mocks in tests only, never silent production fallback. Required tests: 10 admitted then blocked; cooldown boundary via coordinator server time; rejected 11th never extends block; browser timestamps ignored/rejected; simultaneous requests at cooldown reset cannot lose increments; tenth result retrievable; reload/model change/new tab preserves allowance; empty/cleared/forged history cannot reset count; no persisted transcript; duplicate calls provider at most once; changed message/history/model under the same ID rejected; concurrent near global cap cannot exceed; isolation between visitors; same-visitor concurrency predictable; counters survive restart; stale completion/generation blocked; invalid/replayed/wrong-action/wrong-hostname Turnstile rejected; I/O/history roles/order/entry count/combined prompt bounds enforced; invalid classifier blocked; secrets never in errors/logs; cleanup preserves active blocks; dev bypass/test keys never in prod.
 
 Native tests for pure logic + Workers-runtime integration for storage/bindings/WASM. Formatting/linting/dep checks/CI with actual results recorded. Finish with real deployed browser-to-provider smoke test with owner credentials, or identify blocker.
 

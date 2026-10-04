@@ -3,7 +3,12 @@ use worker::{Context, Env, Method, Request, Response, event};
 pub const MAX_WORDS: usize = 250;
 pub const MAX_MESSAGE_BYTES: usize = 4096;
 
+pub const MAX_USER_WORDS: usize = 80;
+pub const MAX_USER_UTF16: usize = 500;
+pub const MAX_USER_BYTES: usize = 2048;
+
 pub mod config;
+pub mod security;
 
 #[derive(Debug, PartialEq)]
 pub enum MessageError {
@@ -31,6 +36,10 @@ pub fn remaining_quota(limit: u32, used: u32) -> u32 {
 
 pub fn count_words(text: &str) -> usize {
     text.split_whitespace().count()
+}
+
+pub fn utf16_len(text: &str) -> usize {
+    text.encode_utf16().count()
 }
 
 pub fn validate_message(text: &str) -> Result<(), MessageError> {
