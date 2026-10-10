@@ -1,9 +1,9 @@
-use inscope::MessageError;
-use inscope::count_words;
-use inscope::validate_message;
+use inscope::domain::message::MessageError;
+use inscope::domain::message::count_words;
+use inscope::domain::message::validate_message;
 
-use inscope::utf16_len;
-use inscope::{MAX_USER_BYTES, MAX_USER_UTF16, MAX_USER_WORDS};
+use inscope::domain::message::utf16_len;
+use inscope::domain::message::{MAX_USER_BYTES, MAX_USER_UTF16, MAX_USER_WORDS};
 
 #[test]
 fn test_count_words() {

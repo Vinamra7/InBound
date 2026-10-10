@@ -1,5 +1,5 @@
 /target
-learning.md
+*.md
 .wrangler/
 build/
 .dev.vars

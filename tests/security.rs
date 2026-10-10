@@ -1,4 +1,4 @@
-use inscope::security::{parse_turnstile, turnstile_ok};
+use inscope::adapters::turnstile::{parse_turnstile, turnstile_ok};
 
 #[test]
 fn test_valid_turnstile_accepted() {

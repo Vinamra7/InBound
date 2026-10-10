@@ -1,4 +1,4 @@
-use inscope::is_allowed_model;
+use inscope::config::is_allowed_model;
 
 #[test]
 fn test_is_allowed_model() {

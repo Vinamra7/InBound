@@ -1,4 +1,4 @@
-use inscope::remaining_quota;
+use inscope::pipeline::limits::remaining_quota;
 
 #[test]
 fn test_remaining_quota() {

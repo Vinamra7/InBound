@@ -1,4 +1,4 @@
-use crate::{MAX_USER_BYTES, MAX_USER_WORDS};
+use crate::domain::message::{MAX_USER_BYTES, MAX_USER_WORDS};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -31,4 +31,8 @@ pub fn load_default() -> AssistantConfig {
         max_words: MAX_USER_WORDS,
         max_bytes: MAX_USER_BYTES,
     }
+}
+
+pub fn is_allowed_model(model: &str, allowed: &[String]) -> bool {
+    allowed.iter().any(|m| m == model)
 }
