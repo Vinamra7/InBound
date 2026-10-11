@@ -10,9 +10,12 @@ pub mod ports;
 pub mod routes;
 
 #[event(fetch)]
-pub async fn main(req: Request, _env: Env, _ctx: Context) -> worker::Result<Response> {
-    if matches!(req.method(), Method::Get) && req.path() == "/health" {
-        return routes::health::handle_health(req).await;
+pub async fn main(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
+    console_error_panic_hook::set_once();
+    match (req.method(), req.path().as_str()) {
+        (Method::Get, "/health") => routes::health::handle_health(req).await,
+        (Method::Post, "/api/session") => routes::session::handle_session(req, env, ctx).await,
+        (Method::Post, "/api/chat") => routes::chat::handle_chat(req, env, ctx).await,
+        _ => Response::error("Not Found", 404),
     }
-    Response::error("Not Found", 404)
 }
