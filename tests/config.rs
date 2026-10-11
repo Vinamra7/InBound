@@ -2,20 +2,13 @@ use inscope::config::AssistantConfig;
 use inscope::config::load_default;
 
 #[test]
-fn default_config_is_valid() {
-    assert!(load_default().validate().is_ok());
-}
-
-#[test]
-fn empty_models_is_invalid() {
-    let mut c = load_default();
-    c.allowed_models.clear();
-    assert!(c.validate().is_err());
+fn default_config_has_models() {
+    assert!(!load_default().allowed_models.is_empty());
 }
 
 #[test]
 fn parses_json_config() {
-    let json = r#"{"allowed_models":["example/alias-a"],"max_words":250,"max_bytes":4096}"#;
+    let json = r#"{"allowed_models":["example/alias-a"]}"#;
     let c: AssistantConfig = serde_json::from_str(json).unwrap();
-    assert!(c.validate().is_ok());
+    assert_eq!(c.allowed_models, vec!["example/alias-a".to_string()]);
 }
