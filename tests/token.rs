@@ -9,8 +9,8 @@ use inscope::domain::token::verify;
 const KEY: &[u8] = b"test-key-must-be-at-least-32-characters!!";
 const NOW: u64 = 1_000_000;
 
-fn raw(sid: &str) -> TokenRaw {
-    TokenRaw::new(sid.to_string(), "1.2.3.0/32".to_string(), Q_NORMAL, NOW)
+fn raw(device_id: &str) -> TokenRaw {
+    TokenRaw::new(device_id.to_string(), Q_NORMAL, NOW)
 }
 
 fn parts(token: &str) -> (&str, &str) {
@@ -58,12 +58,7 @@ fn expired_rejected() {
 
 #[test]
 fn restricted_tier_survives_roundtrip() {
-    let t = TokenRaw::new(
-        "evil".to_string(),
-        "1.2.3.0/32".to_string(),
-        Q_RESTRICTED,
-        NOW,
-    );
+    let t = TokenRaw::new("evil".to_string(), Q_RESTRICTED, NOW);
     let token = sign(&t, KEY).unwrap();
     assert_eq!(verify(&token, KEY, NOW + 10).unwrap(), t);
 }
