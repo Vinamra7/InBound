@@ -5,8 +5,12 @@ pub const MAX_USER_BYTES: usize = 1536;
 pub const MAX_AI_WORDS: usize = 300;
 pub const MAX_AI_BYTES: usize = 3072;
 
+// ---------- UI -> POST /api/chat ----------
+// token: the HMAC session token from /api/session — None = "first visit", goes 401 → client then calls /api/session
+// (turnstile NOT here: it's verified only at /api/session; fingerprint deferred, §11)
 #[derive(Debug, Deserialize)]
 pub struct ChatRequestDto {
+    pub token: Option<String>,
     pub messages: Vec<Message>,
 }
 
