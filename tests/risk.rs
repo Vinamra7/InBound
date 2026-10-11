@@ -7,6 +7,8 @@ fn edge(ip: &str, country: Option<&str>, asn: Option<u32>) -> EdgeInfo {
         ip: ip.to_string(),
         country: country.map(|c| c.to_string()),
         asn,
+        tz: None,
+        lang: None,
     }
 }
 

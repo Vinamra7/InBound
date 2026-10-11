@@ -14,5 +14,18 @@ pub fn extract(req: &Request) -> EdgeInfo {
     let country = req.headers().get("CF-IPCountry").ok().flatten();
     let asn = req.cf().and_then(|cf| cf.asn());
 
-    EdgeInfo { ip, country, asn }
+    let tz = req
+        .cf()
+        .filter(|cf| !cf.timezone_name().is_empty())
+        .map(|cf| cf.timezone_name());
+
+    let lang = req.headers().get("Accept-Language").ok().flatten();
+
+    EdgeInfo {
+        ip,
+        country,
+        asn,
+        tz,
+        lang,
+    }
 }
