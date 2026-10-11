@@ -7,6 +7,10 @@ use sha2::Sha256;
 
 pub const SESSION_TTL_SECS: u64 = 24 * 60 * 60; // 24 hours in seconds
 
+// quota tier carried inside the token (§11 fp/ASN risk collapsed to one claim)
+pub const Q_NORMAL: u8 = 1; // full session quota
+pub const Q_RESTRICTED: u8 = 0; // incoherent fingerprint / datacenter ASN
+
 #[derive(Debug, Deserialize)]
 pub struct SessionRequestDto {
     pub turnstile: String,
@@ -20,8 +24,9 @@ pub struct SessionResponseDto {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TokenRaw {
-    pub sid: String, // random session id — issued once by the server; key for the per-session counter
+    pub device_id: String, // fingerprint id — the session identity; clearing cookies does NOT rotate it
     pub ip_prefix: String, // network part of CF-Connecting-IP at issuance (/32 for IPv4, /64 for IPv6)
+    pub q: u8,             // quota tier at issuance — Q_NORMAL | Q_RESTRICTED
     pub iat: u64,          // "issued at" — unix seconds when the token was minted
     pub exp: u64,          // "expires" — iat + SESSION_TTL_SECS (24h); server rejects past this
 }
@@ -34,10 +39,11 @@ pub enum TokenError {
 }
 
 impl TokenRaw {
-    pub fn new(sid: String, ip_prefix: String, now_secs: u64) -> Self {
+    pub fn new(device_id: String, ip_prefix: String, q: u8, now_secs: u64) -> Self {
         Self {
-            sid,
+            device_id,
             ip_prefix,
+            q,
             iat: now_secs,
             exp: now_secs + SESSION_TTL_SECS,
         }

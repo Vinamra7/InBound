@@ -1,3 +1,5 @@
+use inscope::domain::token::Q_NORMAL;
+use inscope::domain::token::Q_RESTRICTED;
 use inscope::domain::token::SESSION_TTL_SECS;
 use inscope::domain::token::TokenError;
 use inscope::domain::token::TokenRaw;
@@ -8,7 +10,7 @@ const KEY: &[u8] = b"test-key-must-be-at-least-32-characters!!";
 const NOW: u64 = 1_000_000;
 
 fn raw(sid: &str) -> TokenRaw {
-    TokenRaw::new(sid.to_string(), "1.2.3.0/32".to_string(), NOW)
+    TokenRaw::new(sid.to_string(), "1.2.3.0/32".to_string(), Q_NORMAL, NOW)
 }
 
 fn parts(token: &str) -> (&str, &str) {
@@ -52,6 +54,18 @@ fn expired_rejected() {
         verify(&token, KEY, NOW + SESSION_TTL_SECS + 1),
         Err(TokenError::Expired)
     );
+}
+
+#[test]
+fn restricted_tier_survives_roundtrip() {
+    let t = TokenRaw::new(
+        "evil".to_string(),
+        "1.2.3.0/32".to_string(),
+        Q_RESTRICTED,
+        NOW,
+    );
+    let token = sign(&t, KEY).unwrap();
+    assert_eq!(verify(&token, KEY, NOW + 10).unwrap(), t);
 }
 
 #[test]
