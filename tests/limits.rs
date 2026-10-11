@@ -2,8 +2,8 @@ use inscope::domain::message::MessageError;
 use inscope::domain::message::count_words;
 use inscope::domain::message::validate_message;
 
-use inscope::domain::message::utf16_len;
-use inscope::domain::message::{MAX_USER_BYTES, MAX_USER_UTF16, MAX_USER_WORDS};
+use inscope::domain::message::Role;
+use inscope::domain::message::{MAX_AI_BYTES, MAX_USER_BYTES, MAX_USER_WORDS};
 
 #[test]
 fn test_count_words() {
@@ -16,34 +16,41 @@ fn test_count_words() {
 
 #[test]
 fn test_validate_message() {
-    assert_eq!(validate_message(""), Err(MessageError::Empty));
-    assert_eq!(validate_message(" "), Err(MessageError::Empty));
-    assert_eq!(validate_message("hello"), Ok(()));
+    assert_eq!(validate_message("", Role::User), Err(MessageError::Empty));
+    assert_eq!(validate_message(" ", Role::User), Err(MessageError::Empty));
+    assert_eq!(validate_message("hello", Role::User), Ok(()));
 
     let too_long_bytes = "a".repeat(MAX_USER_BYTES + 1);
     assert_eq!(
-        validate_message(&too_long_bytes),
+        validate_message(&too_long_bytes, Role::User),
         Err(MessageError::TooLongBytes)
-    );
-
-    let too_many_units = "🙂".repeat(MAX_USER_UTF16 / 2 + 1); // 502 units, 1004 bytes
-    assert_eq!(
-        validate_message(&too_many_units),
-        Err(MessageError::TooManyUnits)
     );
 
     let too_many_words = "a ".repeat(MAX_USER_WORDS + 1);
     assert_eq!(
-        validate_message(&too_many_words),
+        validate_message(&too_many_words, Role::User),
         Err(MessageError::TooManyWords)
     );
 }
 
 #[test]
-fn test_utf16_len() {
-    assert_eq!(utf16_len("hello"), 5);
-    assert_eq!(utf16_len("🙂"), 2);
-    assert_eq!("🙂".len(), 4);
-    assert_eq!(utf16_len(""), 0);
-    assert_eq!(MAX_USER_UTF16, 500);
+fn test_validate_message_role_limits() {
+    // 150 words (450 bytes): exceeds User's 80-word cap, fits AI's 300w/3072b
+    let long_content = "hi ".repeat(150);
+    assert_eq!(
+        validate_message(&long_content, Role::User),
+        Err(MessageError::TooManyWords)
+    );
+    assert_eq!(validate_message(&long_content, Role::Assistant), Ok(()));
+
+    // over AI's byte cap
+    let huge_reply = "a".repeat(MAX_AI_BYTES + 1);
+    assert_eq!(
+        validate_message(&huge_reply, Role::Assistant),
+        Err(MessageError::TooLongBytes)
+    );
+
+    // System has a 0-byte budget in validate_message — never a valid client-written message
+    assert!(validate_message("hi", Role::System).is_err());
+    assert!(validate_message("", Role::System).is_err());
 }
