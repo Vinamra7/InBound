@@ -6,7 +6,6 @@ pub mod domain;
 pub mod durable;
 pub mod error;
 pub mod pipeline;
-pub mod ports;
 pub mod routes;
 
 #[event(fetch)]

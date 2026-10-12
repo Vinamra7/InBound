@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use worker::Env;
 
+pub const CLASSIFIER_MODEL: &str = "openai/gpt-6-luna";
+
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AssistantConfig {
     pub allowed_models: Vec<String>,
