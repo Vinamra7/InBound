@@ -80,3 +80,9 @@ impl From<serde_json::Error> for AppError {
         AppError::BadRequest // invalid JSON body
     }
 }
+
+impl From<worker::Error> for AppError {
+    fn from(_: worker::Error) -> Self {
+        AppError::Upstream
+    }
+}

@@ -1,28 +1,51 @@
-use inscope::adapters::turnstile::{parse_turnstile, turnstile_ok};
+use inscope::adapters::turnstile::{SiteverifyResponse, ok};
 
-#[test]
-fn test_valid_turnstile_accepted() {
-    let json = r#"{"success":true,"hostname":"example.com","action":"chat"}"#;
-    let decision = parse_turnstile(json).unwrap();
-    assert!(turnstile_ok(&decision, "example.com", "chat"));
+fn resp(success: bool, hostname: Option<&str>, action: Option<&str>) -> SiteverifyResponse {
+    SiteverifyResponse {
+        success,
+        hostname: hostname.map(|h| h.to_string()),
+        action: action.map(|a| a.to_string()),
+    }
 }
 
 #[test]
-fn test_success_false_rejected() {
-    let json = r#"{"success":false,"hostname":"example.com","action":"chat"}"#;
-    let decision = parse_turnstile(json).unwrap();
-    assert!(!turnstile_ok(&decision, "example.com", "chat"));
+fn valid_turnstile_accepted() {
+    assert!(ok(&resp(true, Some("vinamramishra.dev"), Some("session"))));
 }
 
 #[test]
-fn test_malformed_json_errors() {
-    assert!(parse_turnstile("not json").is_err());
-    assert!(parse_turnstile(r#"{"foo":1}"#).is_err()); // missing required `success`
+fn success_false_rejected() {
+    assert!(!ok(&resp(
+        false,
+        Some("vinamramishra.dev"),
+        Some("session")
+    )));
 }
 
 #[test]
-fn test_wrong_hostname_rejected() {
-    let json = r#"{"success":true,"hostname":"evil.com","action":"chat"}"#;
-    let decision = parse_turnstile(json).unwrap();
-    assert!(!turnstile_ok(&decision, "example.com", "chat"));
+fn wrong_hostname_rejected() {
+    assert!(!ok(&resp(true, Some("evil.com"), Some("session"))));
+}
+
+#[test]
+fn missing_hostname_rejected() {
+    assert!(!ok(&resp(true, None, Some("session"))));
+}
+
+#[test]
+fn wrong_action_rejected() {
+    assert!(!ok(&resp(true, Some("vinamramishra.dev"), Some("chat"))));
+}
+
+#[test]
+fn missing_action_rejected() {
+    assert!(!ok(&resp(true, Some("vinamramishra.dev"), None)));
+}
+
+#[test]
+fn real_siteverify_json_shape_parses_kebab() {
+    // include extra unknown field "error-codes" — serde must skip it silently
+    let json = r#"{"success":true,"challenge_ts":"2022-02-28T15:14:30.096Z","hostname":"vinamramishra.dev","error-codes":[],"action":"session","cdata":"x"}"#;
+    let parsed: SiteverifyResponse = serde_json::from_str(json).unwrap();
+    assert!(ok(&parsed));
 }
