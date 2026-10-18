@@ -19,7 +19,7 @@ slots; the UI currently sends `llm-1`. A visitor model selector / `/model` comma
 | Role | Primary | Fallback (corporate DNS often blocks new domains) |
 |---|---|---|
 | UI (Vercel) | `https://vinamramishra.dev` | `https://vinamra-portfolio-beta.vercel.app` |
-| API (Worker) | `https://api.vinamramishra.dev` (custom domain, orange cloud) | `https://inscope.<acct>.workers.dev` |
+| API (Worker) | `https://api.vinamramishra.dev` (custom domain, orange cloud) | `https://inscope.mishravinamra5.workers.dev` |
 
 - UI picks the API base **by its own host**: `vinamramishra.dev` / `www.vinamramishra.dev` → `NEXT_PUBLIC_API_PRIMARY`; localhost / 127.0.0.1 → `NEXT_PUBLIC_API_LOCAL`; other hosts → `NEXT_PUBLIC_API_FALLBACK`. An empty fallback produces a configuration error; set the actual Worker URL before building Vercel.
 - Browser calls the Worker **directly** (never via a Vercel function — the Worker would then see Vercel's IP).
@@ -175,7 +175,7 @@ Legend: ✅ done · 🔧 exists, needs fix (see §7) · ⬜ empty / to write
 ```
 InBound/                         (crate name: inscope)
 ├── Cargo.toml                 ✅ deps incl. futures-util + release profile preserving Wasm metadata; full Worker build verified
-├── wrangler.toml              🔧 model variables + production localhost-off + observability; real database_id configured, deployed bindings still unverified
+├── wrangler.toml              ✅ deployed with DB/rate-limit bindings, model variables and production localhost-off; API health/preflight verified
 ├── schema.sql                 ✅ user_counters + global_counters (§5); user confirmed remote import of both statements
 ├── .dev.vars.example          ✅ TURNSTILE_SECRET, HMAC_KEY (≥32 bytes), OpenCode LLM_API_KEY, local ALLOW_LOCALHOST=true
 ├── README.md                  ✅ architecture + threat-model table + run/deploy steps
@@ -287,11 +287,11 @@ the full Worker build and Wrangler dry run now pass.
 | Pipeline (15) | validate/auth/risk/limits | 100 | done |
 | Routes (15) | routing, session/chat, CORS/OPTIONS | 90 | Worker runtime smoke and end-to-end paths |
 | Frontend (15) | helpers, ContactTerminal, ChatVerification | 85 | real browser session/401/reset/shortcut interaction and deployed host configuration |
-| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 65 | DB/schema configured and release packaging passes; local smoke, secrets, account limits, deploy and real-host checks remain |
+| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 75 | Worker deployed, both API hosts healthy, primary-origin preflight passes; secrets/widget/Vercel and chat/quota checks remain |
 
-**Overall: ~88% (estimate).** Implementation and offline checks pass. Integration and deployment
-are not complete. Weights now include the authorized frontend work; this is not a claim of
-production readiness.
+**Overall: ~90% (estimate).** Worker deployment and public health/preflight checks pass.
+Secrets, frontend production configuration and end-to-end chat/quota verification remain.
+This is not yet a claim that the chat is ready for public use.
 
 ### Verification (2026-10-19)
 - `cargo test`: **48 passed**, no failures.
@@ -302,7 +302,9 @@ production readiness.
 - `worker-build --release`: **passed** after the release-strip fix, using Rust 1.99.0, worker-build 0.8.7 and wasm-bindgen 0.2.129.
 - `npx.cmd --yes wrangler@4.151.1 deploy --dry-run`: **passed**, including custom build/bundling; `DB` and `SESSION_LIMITER` included. Upload size 478.73 KiB / gzip 153.87 KiB. No deployment performed.
 - User terminal confirmed `wrangler d1 execute inscope --remote --file=schema.sql`: **2 queries completed successfully**.
-- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference, deployment. D1 exists and schema import succeeded; actual Worker access and quota behavior remain unverified. No paid inference performed.
+- User deployed Worker version `5bc857f5-b260-4ec4-baff-8d6573250761`: both API hosts configured; startup time reported as 6 ms (not a measurement of chat request CPU time).
+- Agent public checks: both API `/health` URLs return **200 {"ok":true}**. Primary API health preserves JSON Content-Type and allowed-origin CORS; primary-origin chat OPTIONS returns **204**, allows Content-Type and Authorization. These endpoints do not exercise secrets, D1 or the provider.
+- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference. D1 exists and schema import succeeded; actual Worker database access and quota behavior remain unverified. No paid inference performed.
 
 ### Review log
 - 2026-10-18 — Gemini 4 Argon cross-repo review. Applied: fail-open classifier (was 502/contain-yes), turnstile send→502, chat body cap 8KB→40KB, device_id shape 400 before Turnstile, vercel/localhost into host+origin lists, `ratelimits` `simple` block, health-before-config, JSON 404, numeric D1 binds + get() indexing, 5 more datacenter ASNs, official dummy Turnstile key, deleted dead `AssistantConfig` (+ its tests). **Rejected:** "invented model ids" — all three verified in the live catalog same day.
@@ -312,6 +314,7 @@ production readiness.
 - 2026-10-19 — First-launch instructions added to README: Wrangler login, real D1 UUID/schema, dry-run/deploy, production Turnstile/secrets, Vercel public variables/rebuild, and separate UI/API DNS. No Cloudflare/Vercel resources were created or changed by this documentation work.
 - 2026-10-19 — User created D1 `inscope` (`d71e1719-fcad-48a0-8fa2-cfd8f6bf74b8`). Restored the local binding to `DB` to match `env.d1("DB")`; database name remains `inscope`. Static TOML/code alignment verified; schema execution and Worker runtime remain pending.
 - 2026-10-19 — User confirmed remote schema import succeeded. Reproduced their deployment dry-run failure at wasm-bindgen catch-wrapper generation: `strip=true` had removed `target_features`. Changed only the release-strip setting to `debuginfo` (plus explanatory comment), confirmed the section is preserved, and passed the full Worker build and Wrangler 4.151.1 dry run. Runtime/D1 quota checks and production deployment remain pending.
+- 2026-10-19 — User successfully deployed `inscope` to `https://inscope.mishravinamra5.workers.dev` and `api.vinamramishra.dev`; production version `5bc857f5-b260-4ec4-baff-8d6573250761`. Agent confirmed both health endpoints and primary-origin preflight. Next: production Turnstile/HMAC/OpenCode secrets, matching widget/site key, Vercel public variables/rebuild, and real session/chat/quota checks.
 
 ### Build order from here (updated 2026-10-19)
 1. ~~Implementation fixes in §7~~ ✅ offline checks pass; integration caveats remain above.
@@ -319,9 +322,9 @@ production readiness.
 3. `wrangler dev` + `scripts/smoke.sh` — verify session + chat + counter `changes()` gate on D1.
 4. Configure OpenCode service-account `LLM_API_KEY` and verify one real Jev + llm-1 exchange, only when live inference testing is authorized. Check free-model access and account spending controls.
 5. Test real frontend session creation, one 401 resend, Reset during a request, daily-limit shortcuts, and preflight from each real UI origin.
-6. Deploy after review: production secrets, all Turnstile hostnames, custom domain + WAF, Vercel public URLs / mock off. Preserve dashboard model settings when redeploying (§3a).
+6. Worker is deployed. Finish production secrets, all Turnstile hostnames, Vercel public URLs / mock off and real-host chat checks; configure any additional WAF rule separately. Preserve dashboard model settings when redeploying (§3a).
 
-**Deferred:** visitor `/model` selector, streaming, full TLS/cipher scoring, per-IP daily counter (possible v2). Frontend fixes are now in scope; live deployment remains a separate step.
+**Deferred:** visitor `/model` selector, streaming, full TLS/cipher scoring, per-IP daily counter (possible v2). Frontend fixes are in scope; Worker is deployed, full chat activation remains pending.
 
 ---
 
@@ -332,7 +335,7 @@ to `C:\vinamra_portfolio`. References describe the reviewed working files.
 
 | Contract item | Backend behavior (file:line) | Frontend behavior (file:line) | Result |
 |---|---|---|---|
-| API URLs | `wrangler.toml:7` custom domain, workers.dev enabled | `lib/inscope.js:18` host mapping | MATCH; actual fallback URL/config/deployment pending |
+| API URLs | `wrangler.toml:7` custom domain, workers.dev enabled | `lib/inscope.js:18` host mapping | MATCH; API hosts deployed/healthy, Vercel fallback env must use actual URL in §1 |
 | Turnstile hostnames | `src/constants.rs:5` three production UI hosts | `lib/inscope.js:20` primary + www; fallback host supported | MATCH; dashboard widget hosts unverified |
 | Turnstile action | `src/adapters/turnstile.rs:26` requires session | `components/ChatVerification.js:34` sends session | MATCH |
 | Session shape | `src/domain/token.rs:17`, `src/routes/session.rs:73` | `lib/inscope.js:207`, `lib/inscope.js:219` | MATCH; token + numeric expires_at |
@@ -341,7 +344,7 @@ to `C:\vinamra_portfolio`. References describe the reviewed working files.
 | Roles | `src/domain/message.rs:61`, `src/pipeline/validate.rs:18` user/assistant, agent alias; system rejected | `components/ContactTerminal.js:384`, `components/ContactTerminal.js:400` user/assistant only | MATCH |
 | Length/history | `src/domain/message.rs:3`, `src/pipeline/validate.rs:4` role limits, 21 messages / 40 KB | `components/ContactTerminal.js:21`, `components/ContactTerminal.js:49`, `lib/inscope.js:250` | MATCH; UI intentionally stricter at 500 chars/5 lines, 3000 assistant bytes |
 | Error codes | `src/error.rs:23`, `src/error.rs:36` stable status/code pairs | `lib/inscope.js:282`, `components/ContactTerminal.js:316` status-driven messages/locks | MATCH; timeout/network/config remain local UI errors |
-| CORS | `src/routes/cors.rs:5` origins + Content-Type/Authorization, no credentials | `lib/inscope.js:204`, `lib/inscope.js:271` direct JSON fetch + bearer | MATCH; actual browser preflight pending |
+| CORS | `src/routes/cors.rs:5` origins + Content-Type/Authorization, no credentials | `lib/inscope.js:204`, `lib/inscope.js:271` direct JSON fetch + bearer | MATCH; primary-origin OPTIONS verified, browser session still pending |
 | Token transport | `src/pipeline/auth.rs:9` Authorization bearer only | `lib/inscope.js:108`, `lib/inscope.js:275` sessionStorage + bearer | MATCH; no cookies |
 | Expiry/retry | `src/domain/token.rs:68` HMAC before payload parse + expiry check | `lib/inscope.js:101`, `components/ContactTerminal.js:318`, `components/ContactTerminal.js:367` 60s grace + one retry | MATCH; interactive retry unverified |
 | Private classifier | `src/routes/chat.rs:50`, `src/adapters/llm/opencode.rs:151` config-only native noul | `lib/inscope.js:255` no classifier selector | MATCH |
