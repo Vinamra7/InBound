@@ -228,5 +228,5 @@ pushing its production branch. The plan is force-added once because of the exist
 
 Verified on 2026-10-19: 48 Rust tests, Wasm target check, 6 frontend helper tests and
 Next.js production build pass. Live D1/Turnstile/OpenCode integration and browser
-interaction are still pending. `database_id` remains a placeholder. See
+interaction are still pending. The real D1 ID is configured with binding `DB`; remote schema/binding verification remains pending. See
 [claude-5.5.md](claude-5.5.md) for current flows, fix history and deployment checklist.

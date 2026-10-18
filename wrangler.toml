@@ -11,7 +11,7 @@ routes = [
 [[d1_databases]]
 binding = "DB"
 database_name = "inscope"
-database_id = "<fill after `wrangler d1 create inscope`>"
+database_id = "d71e1719-fcad-48a0-8fa2-cfd8f6bf74b8"
 
 [[ratelimits]]
 name = "SESSION_LIMITER"

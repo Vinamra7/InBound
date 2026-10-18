@@ -175,7 +175,7 @@ Legend: ✅ done · 🔧 exists, needs fix (see §7) · ⬜ empty / to write
 ```
 InBound/                         (crate name: inscope)
 ├── Cargo.toml                 ✅ deps incl. futures-util + [profile.release]
-├── wrangler.toml              🔧 model variables + production localhost-off + observability; real database_id and deployed bindings still required
+├── wrangler.toml              🔧 model variables + production localhost-off + observability; real database_id configured, deployed bindings still unverified
 ├── schema.sql                 ✅ user_counters + global_counters (§5)
 ├── .dev.vars.example          ✅ TURNSTILE_SECRET, HMAC_KEY (≥32 bytes), OpenCode LLM_API_KEY, local ALLOW_LOCALHOST=true
 ├── README.md                  ✅ architecture + threat-model table + run/deploy steps
@@ -280,7 +280,7 @@ strip = true
 | Pipeline (15) | validate/auth/risk/limits | 100 | done |
 | Routes (15) | routing, session/chat, CORS/OPTIONS | 90 | Worker runtime smoke and end-to-end paths |
 | Frontend (15) | helpers, ContactTerminal, ChatVerification | 85 | real browser session/401/reset/shortcut interaction and deployed host configuration |
-| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 55 | fill DB id, local smoke, secrets, account limits, deploy and real-host checks |
+| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 60 | DB id configured; local smoke, secrets, account limits, deploy and real-host checks remain |
 
 **Overall: ~87% (estimate).** Implementation and offline checks pass. Integration and deployment
 are not complete. Weights now include the authorized frontend work; this is not a claim of
@@ -292,7 +292,7 @@ production readiness.
 - `cargo fmt`: **passed**.
 - Frontend `node --test tests/inscope.test.mjs`: **6 passed** (aliases, byte cap/history, errors/blank reply, cancellation, 30s timeout, session expiry/cancelled storage).
 - Frontend `npm.cmd run build`: **passed**.
-- Not run: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference, deployment. Wrangler is not installed on PATH; D1 id is still a placeholder. No paid inference performed.
+- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference, deployment. The user created D1 and supplied its real ID; the local config uses binding `DB`. Remote schema/binding behavior is still unverified. No paid inference performed.
 
 ### Review log
 - 2026-10-18 — Gemini 4 Argon cross-repo review. Applied: fail-open classifier (was 502/contain-yes), turnstile send→502, chat body cap 8KB→40KB, device_id shape 400 before Turnstile, vercel/localhost into host+origin lists, `ratelimits` `simple` block, health-before-config, JSON 404, numeric D1 binds + get() indexing, 5 more datacenter ASNs, official dummy Turnstile key, deleted dead `AssistantConfig` (+ its tests). **Rejected:** "invented model ids" — all three verified in the live catalog same day.
@@ -300,10 +300,11 @@ production readiness.
 - Historical comments in `constants.rs` / `error.rs` still mention OpenRouter / localhost; original provider tuning comments moved intact into `opencode.rs` as historical notes. Preserved under the project's user-comment rule. §3/§3a and actual configuration are current.
 - `claude-5.5.md` is explicitly included in the release-preparation commit despite the existing `*.md` ignore rule. Future edits to the tracked plan appear in normal Git diffs. Ignore rules were left unchanged.
 - 2026-10-19 — First-launch instructions added to README: Wrangler login, real D1 UUID/schema, dry-run/deploy, production Turnstile/secrets, Vercel public variables/rebuild, and separate UI/API DNS. No Cloudflare/Vercel resources were created or changed by this documentation work.
+- 2026-10-19 — User created D1 `inscope` (`d71e1719-fcad-48a0-8fa2-cfd8f6bf74b8`). Restored the local binding to `DB` to match `env.d1("DB")`; database name remains `inscope`. Static TOML/code alignment verified; schema execution and Worker runtime remain pending.
 
 ### Build order from here (updated 2026-10-19)
 1. ~~Implementation fixes in §7~~ ✅ offline checks pass; integration caveats remain above.
-2. ~~Infra files~~ ✅ written — fill `database_id` after `wrangler d1 create inscope`, copy `.dev.vars.example` → `.dev.vars`.
+2. ~~Infra files and real D1 id~~ ✅ written/configured — database `inscope`, binding `DB`; copy `.dev.vars.example` → `.dev.vars` for local checks.
 3. `wrangler dev` + `scripts/smoke.sh` — verify session + chat + counter `changes()` gate on D1.
 4. Configure OpenCode service-account `LLM_API_KEY` and verify one real Jev + llm-1 exchange, only when live inference testing is authorized. Check free-model access and account spending controls.
 5. Test real frontend session creation, one 401 resend, Reset during a request, daily-limit shortcuts, and preflight from each real UI origin.
@@ -336,7 +337,7 @@ to `C:\vinamra_portfolio`. References describe the reviewed working files.
 
 ### Remaining deployment blockers / checks
 
-- **Blocker — `wrangler.toml:14`:** placeholder D1 database ID. Create/select the real database, apply `schema.sql` and verify the deployed binding before launch.
+- **D1 resource configured — `wrangler.toml:12`:** user-created database `inscope` with its real UUID; binding restored to `DB` to match `src/routes/chat.rs:41`. Apply `schema.sql` and verify the deployed binding before launch.
 - **Blocker — live access:** configure production Turnstile/HMAC/OpenCode secrets and actual Vercel fallback URL; verify real widget hostnames and OpenCode service-account inference access. Offline tests cannot establish these.
 - **Required runtime verification — `src/adapters/counter.rs:43`:** run `wrangler dev`, exhaust one device's limit and compare D1 user/global rows before/after the denied request. Also send concurrent admitted requests and check neither cap is exceeded. Native tests do not prove D1 connection-local `changes()` behavior.
 - **Required runtime verification — HTTP/UI:** run `sh scripts/smoke.sh` against local Worker (public validation/auth/CORS paths only, no LLM). Test actual allowed-origin preflight, 401 re-verification/resend, Reset during pending chat, 429/503 shortcuts and session timeout in a browser. Verify fetch deadlines in the Workers runtime and free-tier CPU time in observability.
