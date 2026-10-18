@@ -5,6 +5,8 @@ use base64::engine::general_purpose::STANDARD as B64;
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
 
+use crate::domain::fingerprint::FingerprintPayload;
+
 pub const SESSION_TTL_SECS: u64 = 24 * 60 * 60; // 24 hours in seconds
 
 // quota tier carried inside the token (§11 fp/ASN risk collapsed to one claim)
@@ -14,6 +16,7 @@ pub const Q_RESTRICTED: u8 = 0; // incoherent fingerprint / datacenter ASN
 #[derive(Debug, Deserialize)]
 pub struct SessionRequestDto {
     pub turnstile: String,
+    pub fingerprint: FingerprintPayload,
 }
 
 #[derive(Debug, Serialize)]
@@ -65,15 +68,17 @@ pub fn sign(raw: &TokenRaw, key: &[u8]) -> Result<String, TokenError> {
 pub fn verify(token: &str, key: &[u8], now_secs: u64) -> Result<TokenRaw, TokenError> {
     let (payload, sig) = token.split_once('.').ok_or(TokenError::Malformed)?;
 
+    // prove authenticity on the RAW payload string before spending CPU on
+    // base64-decode + JSON parse of attacker-controlled data
+    let mut mac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| TokenError::Malformed)?;
+    mac.update(payload.as_bytes());
+    let sig_bytes = B64.decode(sig).map_err(|_| TokenError::Malformed)?;
+    mac.verify_slice(&sig_bytes)
+        .map_err(|_| TokenError::BadSignature)?;
+
     let payload_bytes = B64.decode(payload).map_err(|_| TokenError::Malformed)?;
     let raw: TokenRaw =
         serde_json::from_slice(&payload_bytes).map_err(|_| TokenError::Malformed)?;
-    let sig_bytes = B64.decode(sig).map_err(|_| TokenError::Malformed)?;
-
-    let mut mac = Hmac::<Sha256>::new_from_slice(key).map_err(|_| TokenError::Malformed)?;
-    mac.update(payload.as_bytes());
-    mac.verify_slice(&sig_bytes)
-        .map_err(|_| TokenError::BadSignature)?;
 
     if raw.is_expired(now_secs) {
         return Err(TokenError::Expired);
