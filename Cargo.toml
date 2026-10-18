@@ -21,4 +21,5 @@ crate-type = ["cdylib", "rlib"]
 opt-level = "z"
 lto = true
 codegen-units = 1
-strip = true
+# wasm-bindgen needs the target_features section before post-processing.
+strip = "debuginfo"

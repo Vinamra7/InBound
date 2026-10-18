@@ -225,8 +225,14 @@ pushing its production branch. The plan is force-added once because of the exist
 - Anything touching `worker` types (D1, Fetch, Request): `wrangler dev` + `scripts/smoke.sh`
 - Frontend helpers: `node --test tests/inscope.test.mjs` from the frontend repo
 - Frontend production build: `npm.cmd run build` from the frontend repo
+- Full Rust-to-Worker packaging: `worker-build --release`, then `npx.cmd wrangler@4 deploy --dry-run`
+
+The release profile uses `strip="debuginfo"` so wasm-bindgen can read the Wasm
+`target_features` metadata. With Rust 1.99.0 / wasm-bindgen 0.2.129, `strip=true`
+removed that metadata and failed with `externref table required for catch wrappers`.
+The full build and Wrangler 4.151.1 dry run pass with the corrected setting.
 
 Verified on 2026-10-19: 48 Rust tests, Wasm target check, 6 frontend helper tests and
 Next.js production build pass. Live D1/Turnstile/OpenCode integration and browser
-interaction are still pending. The real D1 ID is configured with binding `DB`; remote schema/binding verification remains pending. See
+interaction are still pending. The real D1 ID is configured with binding `DB`, and the user confirmed remote schema import succeeded. Worker database access and quota behavior remain unverified. See
 [claude-5.5.md](claude-5.5.md) for current flows, fix history and deployment checklist.

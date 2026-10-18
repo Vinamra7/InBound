@@ -174,9 +174,9 @@ Legend: ✅ done · 🔧 exists, needs fix (see §7) · ⬜ empty / to write
 
 ```
 InBound/                         (crate name: inscope)
-├── Cargo.toml                 ✅ deps incl. futures-util + [profile.release]
+├── Cargo.toml                 ✅ deps incl. futures-util + release profile preserving Wasm metadata; full Worker build verified
 ├── wrangler.toml              🔧 model variables + production localhost-off + observability; real database_id configured, deployed bindings still unverified
-├── schema.sql                 ✅ user_counters + global_counters (§5)
+├── schema.sql                 ✅ user_counters + global_counters (§5); user confirmed remote import of both statements
 ├── .dev.vars.example          ✅ TURNSTILE_SECRET, HMAC_KEY (≥32 bytes), OpenCode LLM_API_KEY, local ALLOW_LOCALHOST=true
 ├── README.md                  ✅ architecture + threat-model table + run/deploy steps
 ├── claude-5.5.md              this plan
@@ -248,8 +248,14 @@ Rust-on-Wasm reminders: no `SystemTime::now()` (use `worker::Date`), no tokio/re
 opt-level = "z"
 lto = true
 codegen-units = 1
-strip = true
+strip = "debuginfo"
 ```
+
+Keep `strip = "debuginfo"`: full symbol stripping removed the `target_features`
+custom section with Rust 1.99.0. wasm-bindgen 0.2.129 needs that metadata to enable
+the externref transformation; without it, Worker packaging failed with
+`externref table required for catch wrappers`. `cargo check` alone did not catch this;
+the full Worker build and Wrangler dry run now pass.
 
 ---
 
@@ -268,6 +274,7 @@ strip = true
 11. ~~Bound streamed request/upstream bodies; add Turnstile/classifier/completion deadlines; reject blank replies; preserve CORS JSON Content-Type; default localhost off; missing D1 metadata → Internal; prefer CF country metadata~~ ✅ code compiles and pure tests pass; Worker runtime checks pending.
 12. ~~Frontend: send llm-1, request cancellation/deadlines, reset stale-reply guard, preserve session retry state and queued auth resend, cap successful history, preserve over-limit draft, disclose provider sharing~~ ✅ six helper tests + production build; interactive verification pending.
 13. ~~Update smoke payloads for model aliases, hostile roles/turn cap, preflight Authorization and CORS headers; update README/local config/this plan~~ ✅ files reviewed; smoke script execution against Worker pending.
+14. ~~`Cargo.toml`: preserve target_features during release compilation by changing strip=true to strip="debuginfo"~~ ✅ reproduced the catch-wrapper error, verified metadata is preserved, `worker-build --release` and Wrangler 4.151.1 deploy dry run pass.
 
 ---
 
@@ -280,9 +287,9 @@ strip = true
 | Pipeline (15) | validate/auth/risk/limits | 100 | done |
 | Routes (15) | routing, session/chat, CORS/OPTIONS | 90 | Worker runtime smoke and end-to-end paths |
 | Frontend (15) | helpers, ContactTerminal, ChatVerification | 85 | real browser session/401/reset/shortcut interaction and deployed host configuration |
-| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 60 | DB id configured; local smoke, secrets, account limits, deploy and real-host checks remain |
+| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 65 | DB/schema configured and release packaging passes; local smoke, secrets, account limits, deploy and real-host checks remain |
 
-**Overall: ~87% (estimate).** Implementation and offline checks pass. Integration and deployment
+**Overall: ~88% (estimate).** Implementation and offline checks pass. Integration and deployment
 are not complete. Weights now include the authorized frontend work; this is not a claim of
 production readiness.
 
@@ -292,7 +299,10 @@ production readiness.
 - `cargo fmt`: **passed**.
 - Frontend `node --test tests/inscope.test.mjs`: **6 passed** (aliases, byte cap/history, errors/blank reply, cancellation, 30s timeout, session expiry/cancelled storage).
 - Frontend `npm.cmd run build`: **passed**.
-- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference, deployment. The user created D1 and supplied its real ID; the local config uses binding `DB`. Remote schema/binding behavior is still unverified. No paid inference performed.
+- `worker-build --release`: **passed** after the release-strip fix, using Rust 1.99.0, worker-build 0.8.7 and wasm-bindgen 0.2.129.
+- `npx.cmd --yes wrangler@4.151.1 deploy --dry-run`: **passed**, including custom build/bundling; `DB` and `SESSION_LIMITER` included. Upload size 478.73 KiB / gzip 153.87 KiB. No deployment performed.
+- User terminal confirmed `wrangler d1 execute inscope --remote --file=schema.sql`: **2 queries completed successfully**.
+- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference, deployment. D1 exists and schema import succeeded; actual Worker access and quota behavior remain unverified. No paid inference performed.
 
 ### Review log
 - 2026-10-18 — Gemini 4 Argon cross-repo review. Applied: fail-open classifier (was 502/contain-yes), turnstile send→502, chat body cap 8KB→40KB, device_id shape 400 before Turnstile, vercel/localhost into host+origin lists, `ratelimits` `simple` block, health-before-config, JSON 404, numeric D1 binds + get() indexing, 5 more datacenter ASNs, official dummy Turnstile key, deleted dead `AssistantConfig` (+ its tests). **Rejected:** "invented model ids" — all three verified in the live catalog same day.
@@ -301,10 +311,11 @@ production readiness.
 - `claude-5.5.md` is explicitly included in the release-preparation commit despite the existing `*.md` ignore rule. Future edits to the tracked plan appear in normal Git diffs. Ignore rules were left unchanged.
 - 2026-10-19 — First-launch instructions added to README: Wrangler login, real D1 UUID/schema, dry-run/deploy, production Turnstile/secrets, Vercel public variables/rebuild, and separate UI/API DNS. No Cloudflare/Vercel resources were created or changed by this documentation work.
 - 2026-10-19 — User created D1 `inscope` (`d71e1719-fcad-48a0-8fa2-cfd8f6bf74b8`). Restored the local binding to `DB` to match `env.d1("DB")`; database name remains `inscope`. Static TOML/code alignment verified; schema execution and Worker runtime remain pending.
+- 2026-10-19 — User confirmed remote schema import succeeded. Reproduced their deployment dry-run failure at wasm-bindgen catch-wrapper generation: `strip=true` had removed `target_features`. Changed only the release-strip setting to `debuginfo` (plus explanatory comment), confirmed the section is preserved, and passed the full Worker build and Wrangler 4.151.1 dry run. Runtime/D1 quota checks and production deployment remain pending.
 
 ### Build order from here (updated 2026-10-19)
 1. ~~Implementation fixes in §7~~ ✅ offline checks pass; integration caveats remain above.
-2. ~~Infra files and real D1 id~~ ✅ written/configured — database `inscope`, binding `DB`; copy `.dev.vars.example` → `.dev.vars` for local checks.
+2. ~~Infra files, real D1 id/schema, release build and deploy dry run~~ ✅ database `inscope`, binding `DB`; copy `.dev.vars.example` → `.dev.vars` for local checks.
 3. `wrangler dev` + `scripts/smoke.sh` — verify session + chat + counter `changes()` gate on D1.
 4. Configure OpenCode service-account `LLM_API_KEY` and verify one real Jev + llm-1 exchange, only when live inference testing is authorized. Check free-model access and account spending controls.
 5. Test real frontend session creation, one 401 resend, Reset during a request, daily-limit shortcuts, and preflight from each real UI origin.
@@ -337,7 +348,7 @@ to `C:\vinamra_portfolio`. References describe the reviewed working files.
 
 ### Remaining deployment blockers / checks
 
-- **D1 resource configured — `wrangler.toml:12`:** user-created database `inscope` with its real UUID; binding restored to `DB` to match `src/routes/chat.rs:41`. Apply `schema.sql` and verify the deployed binding before launch.
+- **D1 resource/schema configured — `wrangler.toml:12`:** user-created database `inscope` with its real UUID; binding `DB` matches `src/routes/chat.rs:41`. User confirmed remote schema import succeeded. Verify Worker runtime access and quota behavior before launch.
 - **Blocker — live access:** configure production Turnstile/HMAC/OpenCode secrets and actual Vercel fallback URL; verify real widget hostnames and OpenCode service-account inference access. Offline tests cannot establish these.
 - **Required runtime verification — `src/adapters/counter.rs:43`:** run `wrangler dev`, exhaust one device's limit and compare D1 user/global rows before/after the denied request. Also send concurrent admitted requests and check neither cap is exceeded. Native tests do not prove D1 connection-local `changes()` behavior.
 - **Required runtime verification — HTTP/UI:** run `sh scripts/smoke.sh` against local Worker (public validation/auth/CORS paths only, no LLM). Test actual allowed-origin preflight, 401 re-verification/resend, Reset during pending chat, 429/503 shortcuts and session timeout in a browser. Verify fetch deadlines in the Workers runtime and free-tier CPU time in observability.
