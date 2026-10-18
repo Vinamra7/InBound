@@ -6,11 +6,10 @@ pub const MAX_AI_WORDS: usize = 300;
 pub const MAX_AI_BYTES: usize = 3072;
 
 // ---------- UI -> POST /api/chat ----------
-// token: the HMAC session token from /api/session — None = "first visit", goes 401 → client then calls /api/session
-// (turnstile NOT here: it's verified only at /api/session; fingerprint deferred, §11)
+// auth is the `Authorization: Bearer` header — the body carries no token.
+// Turnstile is verified only at /api/session, never here.
 #[derive(Debug, Deserialize)]
 pub struct ChatRequestDto {
-    pub token: Option<String>,
     pub messages: Vec<Message>,
 }
 
@@ -19,6 +18,7 @@ pub enum MessageError {
     Empty,
     TooManyWords,
     TooLongBytes,
+    SystemRole,
 }
 
 #[derive(Debug, Serialize)]
@@ -54,24 +54,21 @@ pub fn count_words(text: &str) -> usize {
 }
 
 pub fn validate_message(text: &str, role: Role) -> Result<(), MessageError> {
-    let count = count_words(text);
-    let max_words = match role {
-        Role::User => MAX_USER_WORDS,
-        Role::Assistant => MAX_AI_WORDS,
-        Role::System => 0,
-    };
-    let max_bytes = match role {
-        Role::User => MAX_USER_BYTES,
-        Role::Assistant => MAX_AI_BYTES,
-        Role::System => 0,
-    };
-    if count == 0 {
+    match role {
+        Role::System => Err(MessageError::SystemRole),
+        Role::User => check_length(text, MAX_USER_WORDS, MAX_USER_BYTES),
+        Role::Assistant => check_length(text, MAX_AI_WORDS, MAX_AI_BYTES),
+    }
+}
+
+fn check_length(text: &str, max_words: usize, max_bytes: usize) -> Result<(), MessageError> {
+    if count_words(text) == 0 {
         return Err(MessageError::Empty);
     }
     if text.len() > max_bytes {
         return Err(MessageError::TooLongBytes);
     }
-    if count > max_words {
+    if count_words(text) > max_words {
         return Err(MessageError::TooManyWords);
     }
     Ok(())

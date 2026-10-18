@@ -51,6 +51,12 @@ fn test_validate_message_role_limits() {
     );
 
     // System has a 0-byte budget in validate_message — never a valid client-written message
-    assert!(validate_message("hi", Role::System).is_err());
-    assert!(validate_message("", Role::System).is_err());
+    assert_eq!(
+        validate_message("hi", Role::System),
+        Err(MessageError::SystemRole)
+    );
+    assert_eq!(
+        validate_message("", Role::System),
+        Err(MessageError::SystemRole)
+    );
 }
