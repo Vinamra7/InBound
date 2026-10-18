@@ -8,9 +8,6 @@ use crate::domain::message::{ChatRequestDto, ChatResponseDto};
 use crate::error::AppError;
 use crate::pipeline::{auth, limits, risk, validate};
 
-// up to 21 messages with per-role caps can exceed 30 KB — 8 KB would 400 valid history
-const BODY_CAP_BYTES: usize = 40 * 1024;
-
 pub async fn handle_chat(
     mut req: Request,
     config: ChatConfig,
@@ -33,7 +30,7 @@ async fn chat_flow(
     edge_info: &EdgeInfo,
 ) -> std::result::Result<Response, AppError> {
     let bytes = req.bytes().await.map_err(|_| AppError::BadRequest)?;
-    if bytes.len() > BODY_CAP_BYTES {
+    if bytes.len() > validate::MAX_BODY_BYTES {
         return Err(AppError::BadRequest);
     }
     let dto: ChatRequestDto = serde_json::from_slice(&bytes).map_err(AppError::from)?;

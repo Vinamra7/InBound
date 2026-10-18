@@ -38,7 +38,6 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> worker::Result<Respon
     };
 
     let resp = match (req.method(), req.path().as_str()) {
-        (Method::Get, "/health") => routes::health::handle_health(req).await,
         (Method::Post, "/api/session") => {
             routes::session::handle_session(req, config.session, env.clone(), ctx).await
         }
