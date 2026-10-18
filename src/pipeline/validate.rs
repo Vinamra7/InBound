@@ -3,6 +3,9 @@ use crate::error::AppError;
 
 pub const MAX_MESSAGES: usize = 21; // 10 history pairs + the current message (§2)
 
+// worst-case body: 10 assistant replies (3 000 B) + 11 user messages — well over 8 KB
+pub const MAX_BODY_BYTES: usize = 40 * 1024;
+
 pub fn validate_chat_request(messages: &[Message]) -> Result<(), AppError> {
     if messages.is_empty() || messages.len() > MAX_MESSAGES {
         return Err(AppError::BadRequest);

@@ -65,3 +65,7 @@ fn validate_device_id(device_id: &str) -> bool {
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
+
+pub fn is_valid_device_id(device_id: &str) -> bool {
+    validate_device_id(device_id)
+}

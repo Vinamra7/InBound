@@ -109,6 +109,8 @@ pub async fn complete(
         "model": CHAT_MODEL,
         "messages": llm_messages,
         "max_tokens": REPLY_MAX_TOKENS,
+        // glm-5.3-flash reasons by default — bound it so REPLY_MAX_TOKENS survives reasoning
+        "reasoning": {"effort": "low"},
     });
 
     let text = post_chat(api_key, body).await?;
@@ -124,17 +126,26 @@ pub async fn classify(api_key: &str, message: &str) -> Result<bool, AppError> {
         ],
         "max_tokens": CLASSIFIER_MAX_TOKENS,
         "temperature": 0,
+        // gpt-6-luna reasons by default — 8 tokens cannot survive a reasoning trace
+        "reasoning": {"effort": "none"},
     });
 
     let text = post_chat(api_key, body).await?;
     let (content, _) = match parse_choice(&text) {
         Ok(pair) => pair,
-        Err(e) => {
+        Err(_) => {
             console_log!("classifier unparseable, failing open: {text}");
-            return Err(e);
+            return Ok(true);
         }
     };
 
-    // unparseable output → fail-open (§3) — only absence of a clear "yes" blocks
-    Ok(content.to_lowercase().contains("yes"))
+    let lower = content.to_lowercase();
+    if lower.contains("yes") {
+        return Ok(true);
+    }
+    if lower.contains("no") {
+        return Ok(false);
+    }
+    console_log!("classifier ambiguous, failing open: {content}");
+    Ok(true)
 }

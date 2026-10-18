@@ -23,11 +23,24 @@ fn www_host_accepted() {
 }
 
 #[test]
-fn vercel_host_not_yet_allowed() {
-    // placeholder list — real slug lands after the first Vercel deploy
+fn vercel_fallback_host_accepted() {
+    assert!(ok(&resp(
+        true,
+        Some("vinamra-portfolio-beta.vercel.app"),
+        Some("session")
+    )));
+}
+
+#[test]
+fn localhost_dev_host_accepted() {
+    assert!(ok(&resp(true, Some("localhost"), Some("session"))));
+}
+
+#[test]
+fn unknown_subdomain_rejected() {
     assert!(!ok(&resp(
         true,
-        Some("inscope.vercel.app"),
+        Some("evil.vinamramishra.dev"),
         Some("session")
     )));
 }

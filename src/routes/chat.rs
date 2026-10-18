@@ -8,7 +8,8 @@ use crate::domain::message::{ChatRequestDto, ChatResponseDto};
 use crate::error::AppError;
 use crate::pipeline::{auth, limits, risk, validate};
 
-const BODY_CAP_BYTES: usize = 8192;
+// up to 21 messages with per-role caps can exceed 30 KB — 8 KB would 400 valid history
+const BODY_CAP_BYTES: usize = 40 * 1024;
 
 pub async fn handle_chat(
     mut req: Request,

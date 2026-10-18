@@ -3,7 +3,7 @@ use worker::{Context, Env, Request, Response, Result};
 use crate::adapters::{clock, edge, turnstile};
 use crate::config::SessionConfig;
 use crate::domain::edge::EdgeInfo;
-use crate::domain::fingerprint::validate_fingerprint;
+use crate::domain::fingerprint::{is_valid_device_id, validate_fingerprint};
 use crate::domain::token::{SessionRequestDto, SessionResponseDto, TokenRaw, sign};
 use crate::error::AppError;
 use crate::pipeline::risk;
@@ -49,6 +49,11 @@ async fn session_flow(
         return Err(AppError::BadRequest);
     }
     let payload: SessionRequestDto = serde_json::from_slice(&bytes).map_err(AppError::from)?;
+
+    // reject a garbage identity before spending the Turnstile subrequest (§2: shape → 400)
+    if !is_valid_device_id(&payload.fingerprint.device_id) {
+        return Err(AppError::BadRequest);
+    }
 
     let verified =
         turnstile::verify(&config.turnstile_secret, &payload.turnstile, &edge_info.ip).await?;

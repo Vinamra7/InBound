@@ -2,12 +2,14 @@ use serde::Deserialize;
 
 use crate::error::AppError;
 use worker::d1::{D1Database, D1PreparedStatement};
+use worker::wasm_bindgen::JsValue;
 
 pub struct Allow {
     pub allowed: bool,
     pub count: u32,
 }
 
+// index of each statement inside the batch (§5 order; inserts are 0 and 1, never read)
 const IDX_UPDATE_USER: usize = 2;
 const IDX_UPDATE_GLOBAL: usize = 3;
 const IDX_SELECT_USER: usize = 4;
@@ -18,13 +20,8 @@ struct CountRow {
     count: u32,
 }
 
-//stmt statement
-fn stmt(db: &D1Database, sql: &str, args: &[&str]) -> Result<D1PreparedStatement, AppError> {
-    let js_args = args
-        .iter()
-        .map(|a| worker::wasm_bindgen::JsValue::from(*a))
-        .collect::<Vec<_>>();
-    Ok(db.prepare(sql).bind(&js_args)?)
+fn stmt(db: &D1Database, sql: &str, args: &[JsValue]) -> Result<D1PreparedStatement, AppError> {
+    Ok(db.prepare(sql).bind(args)?)
 }
 
 pub async fn incr(
@@ -46,40 +43,52 @@ pub async fn incr(
 
     let results = db
         .batch(vec![
-            stmt(db, sql_insert_user, &[day, device_id])?,
-            stmt(db, sql_insert_global, &[day])?,
+            stmt(db, sql_insert_user, &[day.into(), device_id.into()])?,
+            stmt(db, sql_insert_global, &[day.into()])?,
             stmt(
                 db,
                 sql_update_user,
-                &[day, device_id, user_limit.to_string().as_str()],
+                &[
+                    day.into(),
+                    device_id.into(),
+                    JsValue::from_f64(user_limit as f64),
+                ],
             )?,
             stmt(
                 db,
                 sql_update_global,
-                &[day, global_limit.to_string().as_str()],
+                &[day.into(), JsValue::from_f64(global_limit as f64)],
             )?,
-            stmt(db, sql_select_user, &[day, device_id])?,
-            stmt(db, sql_select_global, &[day])?,
+            stmt(db, sql_select_user, &[day.into(), device_id.into()])?,
+            stmt(db, sql_select_global, &[day.into()])?,
         ])
         .await?;
 
-    let user_changes = results[IDX_UPDATE_USER]
+    let user_changes = results
+        .get(IDX_UPDATE_USER)
+        .ok_or(AppError::Internal)?
         .meta()?
         .ok_or(AppError::Internal)?
         .changes
         .unwrap_or(0);
-    let global_changes = results[IDX_UPDATE_GLOBAL]
+    let global_changes = results
+        .get(IDX_UPDATE_GLOBAL)
+        .ok_or(AppError::Internal)?
         .meta()?
         .ok_or(AppError::Internal)?
         .changes
         .unwrap_or(0);
 
-    let user_count = results[IDX_SELECT_USER]
+    let user_count = results
+        .get(IDX_SELECT_USER)
+        .ok_or(AppError::Internal)?
         .results::<CountRow>()?
         .first()
         .ok_or(AppError::Internal)?
         .count;
-    let global_count = results[IDX_SELECT_GLOBAL]
+    let global_count = results
+        .get(IDX_SELECT_GLOBAL)
+        .ok_or(AppError::Internal)?
         .results::<CountRow>()?
         .first()
         .ok_or(AppError::Internal)?

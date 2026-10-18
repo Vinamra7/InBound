@@ -20,6 +20,16 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> worker::Result<Respon
         return Ok(routes::cors::preflight(origin));
     }
 
+    // health answers even with missing secrets — config must not gate it
+    if req.method() == Method::Get && req.path() == "/health" {
+        return Ok(routes::cors::wrap(
+            origin,
+            routes::health::handle_health(req)
+                .await
+                .unwrap_or_else(|_| AppError::Internal.response()),
+        ));
+    }
+
     let config = match config::Config::from_env(&env) {
         Ok(c) => c,
         Err(_) => {
@@ -33,7 +43,7 @@ pub async fn main(req: Request, env: Env, ctx: Context) -> worker::Result<Respon
             routes::session::handle_session(req, config.session, env.clone(), ctx).await
         }
         (Method::Post, "/api/chat") => routes::chat::handle_chat(req, config.chat, env, ctx).await,
-        _ => Response::error("Not Found", 404),
+        _ => Ok(AppError::NotFound.response()),
     };
 
     let resp = match resp {

@@ -39,7 +39,10 @@ pub async fn verify(secret: &str, widget_token: &str, ip: &str) -> Result<bool, 
 
     let req = Request::new_with_init(SITEVERIFY_URL, &init).map_err(AppError::from)?;
 
-    let mut resp = Fetch::Request(req).send().await?;
+    let mut resp = Fetch::Request(req)
+        .send()
+        .await
+        .map_err(|_| AppError::Upstream)?;
 
     if resp.status_code() != 200 {
         return Err(AppError::Upstream);

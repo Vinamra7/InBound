@@ -13,6 +13,7 @@ pub enum AppError {
     RateLimited,      // sess/fine/net quota hit — 429
     BudgetExceeded,   // global daily cap — 503
     Upstream,         // siteverify / OpenRouter network failure — 502
+    NotFound,         // unknown route — 404
     Internal,         // config bad, impossible states — 500
 }
 
@@ -27,6 +28,7 @@ impl AppError {
             AppError::RateLimited => 429,
             AppError::BudgetExceeded => 503,
             AppError::Upstream => 502,
+            AppError::NotFound => 404,
             AppError::Internal => 500,
         }
     }
@@ -39,6 +41,7 @@ impl AppError {
             AppError::RateLimited => "rate_limited",
             AppError::BudgetExceeded => "budget_exhausted",
             AppError::Upstream => "upstream",
+            AppError::NotFound => "not_found",
             AppError::Internal => "internal",
         }
     }

@@ -1,20 +1,13 @@
-use serde::Deserialize;
 use worker::Env;
 
 pub const USER_QUOTA_NORMAL: u32 = 10;
 pub const USER_QUOTA_RESTRICTED: u32 = 2;
 pub const GLOBAL_QUOTA: u32 = 500;
 
-#[derive(Debug, Clone, PartialEq, Deserialize)]
-pub struct AssistantConfig {
-    pub allowed_models: Vec<String>,
-}
-
 #[derive(Debug, Clone)]
 pub struct Config {
     pub session: SessionConfig,
     pub chat: ChatConfig,
-    pub assistant: AssistantConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -34,24 +27,6 @@ pub enum ConfigError {
     MissingSecret(&'static str),
     WeakHmacKey,
 }
-
-// ---------- functions ----------
-
-pub fn load_default() -> AssistantConfig {
-    AssistantConfig {
-        allowed_models: vec![
-            "meta/muse-spark-1.3-contributor".to_string(),
-            "openai/gpt-6-luna".to_string(),
-            "z-ai/glm-5.3-flash".to_string(),
-        ],
-    }
-}
-
-pub fn is_allowed_model(model: &str, allowed: &[String]) -> bool {
-    allowed.iter().any(|m| m == model)
-}
-
-// ---------- impls ----------
 
 impl Config {
     pub fn from_env(env: &Env) -> Result<Self, ConfigError> {
@@ -75,7 +50,6 @@ impl Config {
                 hmac_key,
                 llm_api_key: read("LLM_API_KEY")?,
             },
-            assistant: load_default(),
         })
     }
 }
