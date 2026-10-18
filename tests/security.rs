@@ -1,4 +1,4 @@
-use inscope::adapters::turnstile::{SiteverifyResponse, ok};
+use inscope::adapters::turnstile::{SiteverifyResponse, ok, ok_with_localhost};
 
 fn resp(success: bool, hostname: Option<&str>, action: Option<&str>) -> SiteverifyResponse {
     SiteverifyResponse {
@@ -33,7 +33,11 @@ fn vercel_fallback_host_accepted() {
 
 #[test]
 fn localhost_dev_host_accepted() {
-    assert!(ok(&resp(true, Some("localhost"), Some("session"))));
+    assert!(ok_with_localhost(
+        &resp(true, Some("localhost"), Some("session")),
+        true
+    ));
+    assert!(!ok(&resp(true, Some("localhost"), Some("session"))));
 }
 
 #[test]

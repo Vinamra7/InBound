@@ -11,7 +11,10 @@ pub fn extract(req: &Request) -> EdgeInfo {
         .flatten()
         .unwrap_or_else(|| "0.0.0.0".to_string());
 
-    let country = req.headers().get("CF-IPCountry").ok().flatten();
+    let country = req
+        .cf()
+        .and_then(|cf| cf.country())
+        .or_else(|| req.headers().get("CF-IPCountry").ok().flatten());
     let asn = req.cf().and_then(|cf| cf.asn());
 
     let tz = req

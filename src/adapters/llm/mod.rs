@@ -1,3 +1,3 @@
-pub mod openrouter;
+pub mod opencode;
 
-pub use openrouter::{classify, complete};
+pub use opencode::{classify, complete};

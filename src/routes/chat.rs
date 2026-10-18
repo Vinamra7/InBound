@@ -1,6 +1,6 @@
 use worker::{Context, Env, Request, Response, Result};
 
-use crate::adapters::{clock, edge, llm};
+use crate::adapters::{clock, edge, http, llm};
 use crate::config::ChatConfig;
 use crate::constants::{CANNED_REPLY, SYSTEM_PROMPT};
 use crate::domain::edge::EdgeInfo;
@@ -29,10 +29,7 @@ async fn chat_flow(
     env: &Env,
     edge_info: &EdgeInfo,
 ) -> std::result::Result<Response, AppError> {
-    let bytes = req.bytes().await.map_err(|_| AppError::BadRequest)?;
-    if bytes.len() > validate::MAX_BODY_BYTES {
-        return Err(AppError::BadRequest);
-    }
+    let bytes = http::request_body(req, validate::MAX_BODY_BYTES).await?;
     let dto: ChatRequestDto = serde_json::from_slice(&bytes).map_err(AppError::from)?;
 
     validate::validate_chat_request(&dto.messages)?;
@@ -50,7 +47,7 @@ async fn chat_flow(
         .ok_or(AppError::Internal)?
         .content
         .clone();
-    let in_scope = llm::classify(&config.llm_api_key, &current).await?;
+    let in_scope = llm::classify(&config.llm_api_key, &config.classifier_model, &current).await?;
 
     if !in_scope {
         return Response::from_json(&ChatResponseDto {
@@ -60,7 +57,12 @@ async fn chat_flow(
         .map_err(|_| AppError::Internal);
     }
 
-    let (reply, usage) = llm::complete(&config.llm_api_key, SYSTEM_PROMPT, &dto.messages).await?;
+    let model = config
+        .models
+        .get(dto.model.index())
+        .ok_or(AppError::Internal)?;
+    let (reply, usage) =
+        llm::complete(&config.llm_api_key, model, SYSTEM_PROMPT, &dto.messages).await?;
 
     Response::from_json(&ChatResponseDto { reply, usage }).map_err(|_| AppError::Internal)
 }

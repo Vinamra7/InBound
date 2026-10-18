@@ -2,6 +2,7 @@ name = "inscope"
 main = "build/index.js"
 compatibility_date = "2026-10-03"
 workers_dev = true
+keep_vars = true
 
 routes = [
   { pattern = "api.vinamramishra.dev", custom_domain = true },
@@ -19,3 +20,19 @@ simple = { limit = 5, period = 60 }
 
 [build]
 command = "cargo install -q \"worker-build@^0.8\" && worker-build --release"
+
+[vars]
+LLM_1_MODEL = "deepseek-v4.1-flash-free"
+LLM_1_API = "chat_completions"
+LLM_2_MODEL = "glm-5.3-flash-free"
+LLM_2_API = "chat_completions"
+LLM_3_MODEL = "longcat-2.5-preview-free"
+LLM_3_API = "chat_completions"
+CLASSIFIER_MODEL = "jev-1.13-free"
+ALLOW_LOCALHOST = "false"
+
+[observability]
+enabled = true
+
+[observability.traces]
+enabled = true

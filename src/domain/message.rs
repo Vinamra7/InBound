@@ -10,7 +10,28 @@ pub const MAX_AI_BYTES: usize = 3072;
 // Turnstile is verified only at /api/session, never here.
 #[derive(Debug, Deserialize)]
 pub struct ChatRequestDto {
+    pub model: ChatModelSlot,
     pub messages: Vec<Message>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq)]
+pub enum ChatModelSlot {
+    #[serde(rename = "llm-1")]
+    One,
+    #[serde(rename = "llm-2")]
+    Two,
+    #[serde(rename = "llm-3")]
+    Three,
+}
+
+impl ChatModelSlot {
+    pub fn index(self) -> usize {
+        match self {
+            Self::One => 0,
+            Self::Two => 1,
+            Self::Three => 2,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq)]

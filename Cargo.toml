@@ -11,6 +11,7 @@ console_error_panic_hook = "0.1"
 hmac = "0.12"
 sha2 = "0.10"
 base64 = "0.22"
+futures-util = "0.3"
 
 
 [lib]

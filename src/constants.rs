@@ -6,24 +6,18 @@ pub const ALLOWED_HOSTS: &[&str] = &[
     "vinamramishra.dev",
     "www.vinamramishra.dev",
     "vinamra-portfolio-beta.vercel.app",
-    "localhost",
 ];
 
 pub const ALLOWED_ORIGINS: &[&str] = &[
     "https://vinamramishra.dev",
     "https://www.vinamramishra.dev",
     "https://vinamra-portfolio-beta.vercel.app",
-    "http://localhost:3000",
 ];
 
-pub const OPENROUTER_URL: &str = "https://openrouter.ai/api/v1/chat/completions";
+pub const OPENCODE_URL: &str = "https://opencode.ai/inference";
 
 // verified against the live OpenRouter catalog 2026-10-18
-pub const CLASSIFIER_MODEL: &str = "openai/gpt-6-luna";
-pub const CHAT_MODEL: &str = "z-ai/glm-5.3-flash";
-
-pub const CLASSIFIER_MAX_TOKENS: u32 = 8;
-pub const REPLY_MAX_TOKENS: u32 = 400;
+pub const REPLY_MAX_TOKENS: u32 = 2048;
 
 pub const SYSTEM_PROMPT: &str = "You are InScope, the assistant on Vinamra Mishra's portfolio site. Answer ONLY about Vinamra, using these verified facts:\n\
 - Backend/infrastructure engineer.\n\

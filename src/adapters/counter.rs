@@ -70,14 +70,14 @@ pub async fn incr(
         .meta()?
         .ok_or(AppError::Internal)?
         .changes
-        .unwrap_or(0);
+        .ok_or(AppError::Internal)?;
     let global_changes = results
         .get(IDX_UPDATE_GLOBAL)
         .ok_or(AppError::Internal)?
         .meta()?
         .ok_or(AppError::Internal)?
         .changes
-        .unwrap_or(0);
+        .ok_or(AppError::Internal)?;
 
     let user_count = results
         .get(IDX_SELECT_USER)

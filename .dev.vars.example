@@ -1,5 +1,6 @@
 # copy to .dev.vars (gitignored) and fill with real values for `wrangler dev`
+ALLOW_LOCALHOST=true
 # TURNSTILE_SECRET below is Cloudflare's official "always passes" test key — works locally only
 TURNSTILE_SECRET=1x0000000000000000000000000000000AA
 HMAC_KEY=dev-only-hmac-key-at-least-32-bytes-long!!
-LLM_API_KEY=sk-or-v1-<your-openrouter-key>
+LLM_API_KEY=<your-opencode-service-account-key>

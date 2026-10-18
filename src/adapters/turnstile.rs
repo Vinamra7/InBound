@@ -1,9 +1,10 @@
 use serde::Deserialize;
 
+use crate::adapters::http;
 use crate::constants::{ALLOWED_HOSTS, SITEVERIFY_URL, TURNSTILE_ACTION};
 use crate::error::AppError;
 use worker::wasm_bindgen::JsValue;
-use worker::{Fetch, Headers, Method, Request, RequestInit};
+use worker::{Headers, Method, Request, RequestInit};
 
 #[derive(Debug, Deserialize)]
 pub struct SiteverifyResponse {
@@ -13,15 +14,24 @@ pub struct SiteverifyResponse {
 }
 
 pub fn ok(resp: &SiteverifyResponse) -> bool {
+    ok_with_localhost(resp, false)
+}
+
+pub fn ok_with_localhost(resp: &SiteverifyResponse, allow_localhost: bool) -> bool {
     resp.success
-        && resp
-            .hostname
-            .as_deref()
-            .is_some_and(|h| ALLOWED_HOSTS.contains(&h))
+        && resp.hostname.as_deref().is_some_and(|h| {
+            ALLOWED_HOSTS.contains(&h)
+                || (allow_localhost && matches!(h, "localhost" | "127.0.0.1"))
+        })
         && resp.action.as_deref() == Some(TURNSTILE_ACTION)
 }
 
-pub async fn verify(secret: &str, widget_token: &str, ip: &str) -> Result<bool, AppError> {
+pub async fn verify(
+    secret: &str,
+    widget_token: &str,
+    ip: &str,
+    allow_localhost: bool,
+) -> Result<bool, AppError> {
     let body = serde_json::json!({
         "secret": secret,
         "response": widget_token,
@@ -39,17 +49,9 @@ pub async fn verify(secret: &str, widget_token: &str, ip: &str) -> Result<bool, 
 
     let req = Request::new_with_init(SITEVERIFY_URL, &init).map_err(AppError::from)?;
 
-    let mut resp = Fetch::Request(req)
-        .send()
-        .await
-        .map_err(|_| AppError::Upstream)?;
+    let bytes = http::fetch_body(req, 8_000, 16 * 1024).await?;
+    let parsed: SiteverifyResponse =
+        serde_json::from_slice(&bytes).map_err(|_| AppError::Upstream)?;
 
-    if resp.status_code() != 200 {
-        return Err(AppError::Upstream);
-    }
-
-    let text = resp.text().await.map_err(|_| AppError::Upstream)?;
-    let parsed: SiteverifyResponse = serde_json::from_str(&text).map_err(|_| AppError::Upstream)?;
-
-    Ok(ok(&parsed))
+    Ok(ok_with_localhost(&parsed, allow_localhost))
 }

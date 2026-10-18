@@ -1,6 +1,6 @@
 use worker::{Context, Env, Request, Response, Result};
 
-use crate::adapters::{clock, edge, turnstile};
+use crate::adapters::{clock, edge, http, turnstile};
 use crate::config::SessionConfig;
 use crate::domain::edge::EdgeInfo;
 use crate::domain::fingerprint::{is_valid_device_id, validate_fingerprint};
@@ -44,10 +44,7 @@ async fn session_flow(
         return Err(AppError::RateLimited);
     }
 
-    let bytes = req.bytes().await.map_err(|_| AppError::BadRequest)?;
-    if bytes.len() > BODY_CAP_BYTES {
-        return Err(AppError::BadRequest);
-    }
+    let bytes = http::request_body(req, BODY_CAP_BYTES).await?;
     let payload: SessionRequestDto = serde_json::from_slice(&bytes).map_err(AppError::from)?;
 
     // reject a garbage identity before spending the Turnstile subrequest (§2: shape → 400)
@@ -55,8 +52,13 @@ async fn session_flow(
         return Err(AppError::BadRequest);
     }
 
-    let verified =
-        turnstile::verify(&config.turnstile_secret, &payload.turnstile, &edge_info.ip).await?;
+    let verified = turnstile::verify(
+        &config.turnstile_secret,
+        &payload.turnstile,
+        &edge_info.ip,
+        config.allow_localhost,
+    )
+    .await?;
     if !verified {
         return Err(AppError::HumanCheckFailed);
     }
