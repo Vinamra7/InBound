@@ -67,7 +67,7 @@ chosen model. Base URL stays `https://opencode.ai/inference`; the Worker selects
 `/openai/v1/chat/completions` or `/openai/v1/responses`. Output is capped at 2048 tokens;
 streaming and automatic provider retries are off. Responses requests set `store=false`.
 
-The classifier uses `/systemone/v1/systemone`: a native `noul` probability, with ≥0.5
+The classifier uses `/systemone/v1/systemone` with the latest message and validated conversation history, plus explicit yes/no criteria: a native `noul` probability, with ≥0.5
 meaning in scope. Visitors cannot select it. Malformed answer fields retain the
 previous fail-open policy; transport/HTTP/invalid-JSON failures return 502. A different
 classifier ID must support this native schema.

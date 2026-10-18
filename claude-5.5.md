@@ -78,11 +78,11 @@ Headers: `Authorization: Bearer <token>`. Body: `{ model: "llm-1", messages: [{r
 - **Streaming OFF.** Single JSON response.
 - **Provider:** OpenCode Console inference, base `https://opencode.ai/inference`. Secret `LLM_API_KEY` must contain an OpenCode service-account API key. A Go subscription or added credit alone does not verify that the API key has inference access.
 - **Model selection:** Cloudflare variables supply the three chat model IDs and API formats (§3a). Client aliases cannot override IDs, endpoints or the classifier. This is a choice of slot, not a fallback chain.
-- **Classifier (Typesafe Jev AI — the project's headline feature):** private `CLASSIFIER_MODEL` variable. POST `/systemone/v1/systemone` with `{model,state,questions:{in_scope:{type:"noul",instructions}}}`. Only the current message is classified. Read `answers.in_scope.noul` as a probability in [0,1]; ≥0.5 is in scope. This is native `noul`, not generated `yes`/`no` text. Malformed answer fields → fail-open + generic log (existing availability trade-off). Transport/HTTP/invalid-JSON failures → 502. No text temperature/max_tokens fields on this native endpoint.
+- **Classifier (Typesafe Jev AI — the project's headline feature):** private `CLASSIFIER_MODEL` variable. POST `/systemone/v1/systemone` with `{model,state:{history,message},questions:{in_scope:{type:"noul",instructions,criteria:{true,false}}}}`. Classify the latest message using the validated prior user/assistant exchanges as context, so follow-ups such as "explain that" can refer to the previous answer. Both classifier and chat completion receive the same bounded conversation supplied by the UI (up to 10 successful exchanges plus the latest message, with per-entry limits and 40 KB request cap); local shortcuts and failed exchanges are excluded. Explicit criteria accept first-name introductions, work questions, greetings and follow-ups; reject unrelated tasks even when they mention Vinamra. Read `answers.in_scope.noul` as a probability in [0,1]; ≥0.5 is in scope. This is native `noul`, not generated `yes`/`no` text. Malformed answer fields → fail-open + generic log (existing availability trade-off). Transport/HTTP/invalid-JSON failures → 502. No text temperature/max_tokens fields on this native endpoint.
 - **Roles:** client may send `user`, `assistant`, `agent` (alias → assistant). `system` from client → 400. Upstream always `assistant`; omit `stream`.
 - **Length limits:** user 80 words / 1536 bytes; assistant 300 words / 3072 bytes. Order: shape/roles → per-entry lengths → turn cap.
 - **CORS:** allowlist `["https://vinamramishra.dev", "https://www.vinamramishra.dev", "https://vinamra-portfolio-beta.vercel.app"]`; `ALLOW_LOCALHOST=true` additionally enables `http://localhost:3000` and `http://127.0.0.1:3000`. Echo the matching `Origin`; allow headers `Content-Type, Authorization`; no credentials. Preserve JSON Content-Type on every wrapped response incl. errors and 404; `Vary: Origin`, `Cache-Control: no-store`. CORS does not authenticate callers.
-- **Errors:** body is `{"error": code}` only — never which limit/key. Generic configuration/classifier logs; no prompt, bearer token or provider response logging added. Codes: 400 `bad_request`, 401 `unauthorized`, 403 `human_check_failed`, 404 `not_found`, 429 `rate_limited`, 503 `budget_exhausted`, 502 `upstream`, 500 `internal`.
+- **Errors:** body is `{"error": code}` only — never which limit/key. Server diagnostics log static upstream service/stage, numeric HTTP status and an allowlisted provider error type. Error bodies are bounded to 4 KB for classification; unknown types and all upstream error messages are discarded. No prompts, bearer tokens, keys or raw provider bodies are logged. Codes: 400 `bad_request`, 401 `unauthorized`, 403 `human_check_failed`, 404 `not_found`, 429 `rate_limited`, 503 `budget_exhausted`, 502 `upstream`, 500 `internal`.
 - **Cost bounds:** 500 admitted chat attempts/day, each with at most one classifier and one completion. Completion cap 2048 tokens, no automatic fallback/retry. Free model availability/pricing and account spending controls must be checked in OpenCode before going live; a provider spend cap has not been verified.
 - **Turnstile:** widget configured for all three production UI hostnames; hostname + action + remoteip verified server-side. Local widget hostnames (`localhost`, `127.0.0.1`) require `ALLOW_LOCALHOST=true`; production defaults to false. Siteverify deadline 8s / body cap 16 KB. Classifier deadline 5s; chat deadline 20s; provider bodies capped at 128 KB.
 
@@ -95,9 +95,10 @@ Headers: `Authorization: Bearer <token>`. Body: `{ model: "llm-1", messages: [{r
 | `llm-3` | `LLM_3_MODEL` | `longcat-2.5-preview-free` | `LLM_3_API=chat_completions` |
 | private classifier | `CLASSIFIER_MODEL` | `jev-1.13-free` | fixed native System One / `noul` |
 
-The four initial IDs were found in the public OpenCode model catalog on 2026-10-19;
-no inference calls or account credits were used to verify them. Account access and runtime
-responses remain unverified. Change variables in Cloudflare **Settings → Variables and Secrets**;
+The four initial IDs were found in the public OpenCode model catalog on 2026-10-19.
+Jev now passes twelve synthetic scope checks through the free endpoint, without an API key or
+account credits. Production chat completion access is failing with upstream HTTP 403; the
+account-specific reason is still being diagnosed. Change variables in Cloudflare **Settings → Variables and Secrets**;
 publish the variable changes. API format must match the chosen model:
 
 - `chat_completions` → `/openai/v1/chat/completions`, `max_tokens=2048`.
@@ -189,7 +190,7 @@ InBound/                         (crate name: inscope)
 │   ├──
 │   ├── routes/                thin HTTP layer: parse → pipeline → serialize
 │   │   ├── mod.rs             ✅
-│   │   ├── session.rs         🔧 full §2 flow coded — needs `wrangler dev` run (rate limiter + Turnstile + token)
+│   │   ├── session.rs         ✅ real browser session creation returns 200; rate-limit cap still needs verification
 │   │   ├── chat.rs            🔧 full §2 flow coded — needs `wrangler dev` run (D1 + classifier + completion)
 │   │   ├── cors.rs            🔧 header merge preserves JSON Content-Type; local opt-in; needs runtime preflight/error-header check
 │   │   └── health.rs          ✅ GET /health
@@ -212,13 +213,13 @@ InBound/                         (crate name: inscope)
 │   └── adapters/              Cloudflare I/O as free functions, no trait layer
 │       ├── mod.rs             ✅
 │       ├── edge.rs            ✅ Cloudflare country first, CF-IPCountry fallback; edge facts + weak Accept-Language hint
-│       ├── http.rs            🔧 bounded stream reads + fetch abort deadlines; Wasm check passes, runtime still unverified
-│       ├── turnstile.rs       🔧 pure hostname/action checks tested; bounded timed siteverify needs real widget test
+│       ├── http.rs            🔧 bounded stream reads, fetch deadlines and redacted failure diagnostics; live HTTP-status logging works; cap/deadline integration still pending
+│       ├── turnstile.rs       ✅ real widget/siteverify/session flow succeeds; pure hostname/action checks pass
 │       ├── counter.rs         🔧 incr reordered + changes()=1 gate + unwraps removed — code compiles; still UNTESTED on real D1 (verify `changes()` in `wrangler dev`)
 │       ├── clock.rs           ✅ now_secs() + utc_day() (pure civil-date math, unit-tested)
 │       └── llm/
 │           ├── mod.rs         ✅ module wiring
-│           └── opencode.rs    🔧 native noul classifier + completion/Responses formats tested; no live inference run (openrouter.rs removed)
+│           └── opencode.rs    🔧 history-aware noul criteria pass twelve live free-model checks; production completion returns upstream 403 (openrouter.rs removed)
 │
 ├── tests/                     native unit tests (pure fns only)
 │   ├── error.rs               ✅ AppError status/code
@@ -275,6 +276,7 @@ the full Worker build and Wrangler dry run now pass.
 12. ~~Frontend: send llm-1, request cancellation/deadlines, reset stale-reply guard, preserve session retry state and queued auth resend, cap successful history, preserve over-limit draft, disclose provider sharing~~ ✅ six helper tests + production build; interactive verification pending.
 13. ~~Update smoke payloads for model aliases, hostile roles/turn cap, preflight Authorization and CORS headers; update README/local config/this plan~~ ✅ files reviewed; smoke script execution against Worker pending.
 14. ~~`Cargo.toml`: preserve target_features during release compilation by changing strip=true to strip="debuginfo"~~ ✅ reproduced the catch-wrapper error, verified metadata is preserved, `worker-build --release` and Wrangler 4.151.1 deploy dry run pass.
+15. ~~Add redacted provider diagnostics; replace ambiguous scope question with explicit true/false criteria and validated conversation history~~ ✅ 50 Rust tests and Wasm check pass; twelve live synthetic Jev checks pass. Completion access is a separate unresolved provider issue.
 
 ---
 
@@ -283,18 +285,18 @@ the full Worker build and Wrangler dry run now pass.
 | Area (weight) | Module | % | Remaining |
 |---|---|---|---|
 | Domain (15) | message/model aliases, token, edge/risk, fingerprint | 100 | pure tests pass |
-| Adapters (25) | edge/clock, http, Turnstile, D1 counter, OpenCode | 88 | live D1 batch semantics, fetch deadlines and real provider/widget responses |
+| Adapters (25) | edge/clock, http, Turnstile, D1 counter, OpenCode | 90 | Turnstile works; completion access, D1 cap semantics and fetch deadlines remain |
 | Pipeline (15) | validate/auth/risk/limits | 100 | done |
-| Routes (15) | routing, session/chat, CORS/OPTIONS | 90 | Worker runtime smoke and end-to-end paths |
-| Frontend (15) | helpers, ContactTerminal, ChatVerification | 85 | real browser session/401/reset/shortcut interaction and deployed host configuration |
-| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 75 | Worker deployed, both API hosts healthy, primary-origin preflight passes; secrets/widget/Vercel and chat/quota checks remain |
+| Routes (15) | routing, session/chat, CORS/OPTIONS | 92 | real session/preflight pass; successful completion and quota-cap checks remain |
+| Frontend (15) | helpers, ContactTerminal, ChatVerification | 87 | browser session and canned response work; real completion/401/reset/shortcut interaction remain |
+| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 78 | Worker deployed, secrets present, browser reaches API; OpenCode completion access, WAF and quota checks remain |
 
 **Overall: ~90% (estimate).** Worker deployment and public health/preflight checks pass.
-Secrets, frontend production configuration and end-to-end chat/quota verification remain.
+Browser session creation works, but OpenCode chat completion access and end-to-end quota verification remain.
 This is not yet a claim that the chat is ready for public use.
 
 ### Verification (2026-10-19)
-- `cargo test`: **48 passed**, no failures.
+- `cargo test`: **50 passed**, no failures, including provider-error redaction and classifier history/current-message separation tests.
 - `cargo check --target wasm32-unknown-unknown`: **passed**.
 - `cargo fmt`: **passed**.
 - Frontend `node --test tests/inscope.test.mjs`: **6 passed** (aliases, byte cap/history, errors/blank reply, cancellation, 30s timeout, session expiry/cancelled storage).
@@ -304,9 +306,13 @@ This is not yet a claim that the chat is ready for public use.
 - User terminal confirmed `wrangler d1 execute inscope --remote --file=schema.sql`: **2 queries completed successfully**.
 - User deployed Worker version `5bc857f5-b260-4ec4-baff-8d6573250761`: both API hosts configured; startup time reported as 6 ms (not a measurement of chat request CPU time).
 - Agent public checks: both API `/health` URLs return **200 {"ok":true}**. Primary API health preserves JSON Content-Type and allowed-origin CORS; primary-origin chat OPTIONS returns **204**, allows Content-Type and Authorization. These endpoints do not exercise secrets, D1 or the provider.
-- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()` integration, real Turnstile, browser interaction, authenticated OpenCode inference. D1 exists and schema import succeeded; actual Worker database access and quota behavior remain unverified. No paid inference performed.
+- User HAR/browser checks: session **200**, www-origin preflights **204**, valid `llm-1` chat request **502**. A later browser request returned **200** with the canned scope rejection for an on-topic introduction; another returned **502**. Live redacted logs identify `openai/v1/chat/completions` returning **403**; no Worker exception. Exact authenticated provider rejection reason remains unverified.
+- Reproduced the original classifier false rejection using keyless `jev-1.13-free` (intro probability 0.31). Explicit criteria plus structured history pass **12/12** live synthetic checks: introduction/current job/greeting/skills/thanks accepted; unrelated coding/name-bait/prompt injection rejected; "explain that" and "tell me more" accepted after an answer about Cacher; topic switches and follow-ups on unrelated content rejected. Introduction and job probabilities are 0.96. No account credits or API key used; this small sample is not a universal accuracy guarantee.
+- A separate keyless free-chat probe returned **403 `FreeTierError`**. This does not establish the error type or reason for the authenticated production request.
+- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()`/cap integration, or successful production completion. Real browser session succeeds and chat reaches the provider after D1; exact quota cap behavior remains unverified. No paid inference performed.
 
 ### Review log
+- 2026-10-19 — Diagnosed user HAR and live browser retries. Added safe upstream stage/status/error-type diagnostics without request data or raw error bodies. Reproduced and corrected a Jev false rejection with explicit noul criteria. At the user's request, Jev now receives the validated prior conversation and latest message separately; twelve live free-model cases pass, including contextual follow-ups. Verified UI → Worker → chat LLM already passes the same bounded user/assistant history plus the server prompt. Session/CORS work; completion upstream 403 remains the deployment blocker. WAF is still not configured.
 - 2026-10-18 — Gemini 4 Argon cross-repo review. Applied: fail-open classifier (was 502/contain-yes), turnstile send→502, chat body cap 8KB→40KB, device_id shape 400 before Turnstile, vercel/localhost into host+origin lists, `ratelimits` `simple` block, health-before-config, JSON 404, numeric D1 binds + get() indexing, 5 more datacenter ASNs, official dummy Turnstile key, deleted dead `AssistantConfig` (+ its tests). **Rejected:** "invented model ids" — all three verified in the live catalog same day.
 - 2026-10-19 — OpenCode migration + cross-repo fixes: three Cloudflare-configured aliases, native Jev noul, optional Responses adapter, bounded/timed I/O, CORS Content-Type fix, production localhost opt-in, D1 metadata failure handling, CF country source. Frontend fixes: request abort/deadlines, queued 401 retry preserved across local shortcuts, Reset preserves session retry state and blocks stale responses, successful history limited to 20 entries/40 KB, over-limit draft preserved, privacy updated. Six helper tests and production build pass. No UI model selector added.
 - Historical comments in `constants.rs` / `error.rs` still mention OpenRouter / localhost; original provider tuning comments moved intact into `opencode.rs` as historical notes. Preserved under the project's user-comment rule. §3/§3a and actual configuration are current.

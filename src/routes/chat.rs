@@ -41,13 +41,8 @@ async fn chat_flow(
     let db = env.d1("DB").map_err(|_| AppError::Internal)?;
     limits::enforce(&db, &clock::utc_day(now), &raw.device_id, raw.q).await?;
 
-    let current = dto
-        .messages
-        .last()
-        .ok_or(AppError::Internal)?
-        .content
-        .clone();
-    let in_scope = llm::classify(&config.llm_api_key, &config.classifier_model, &current).await?;
+    let in_scope =
+        llm::classify(&config.llm_api_key, &config.classifier_model, &dto.messages).await?;
 
     if !in_scope {
         return Response::from_json(&ChatResponseDto {

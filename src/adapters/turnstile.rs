@@ -49,7 +49,7 @@ pub async fn verify(
 
     let req = Request::new_with_init(SITEVERIFY_URL, &init).map_err(AppError::from)?;
 
-    let bytes = http::fetch_body(req, 8_000, 16 * 1024).await?;
+    let bytes = http::fetch_body(req, 8_000, 16 * 1024, "turnstile").await?;
     let parsed: SiteverifyResponse =
         serde_json::from_slice(&bytes).map_err(|_| AppError::Upstream)?;
 

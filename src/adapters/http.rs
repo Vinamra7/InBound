@@ -34,17 +34,96 @@ pub async fn request_body(req: &mut Request, cap: usize) -> Result<Vec<u8>, AppE
         .map_err(|_| AppError::BadRequest)
 }
 
-pub async fn fetch_body(req: Request, timeout_ms: u32, cap: usize) -> Result<Vec<u8>, AppError> {
+fn provider_error_code(bytes: &[u8]) -> Option<&'static str> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    let code = value.pointer("/error/type")?.as_str()?;
+    [
+        "FreeTierError",
+        "AuthError",
+        "AuthenticationError",
+        "ModelError",
+        "ModelAccessError",
+        "ModelNotFoundError",
+        "ModelDisabledError",
+        "BalanceError",
+        "InsufficientBalanceError",
+        "BudgetExceededError",
+        "RateLimitError",
+        "ProviderError",
+        "api_error",
+    ]
+    .into_iter()
+    .find(|known| *known == code)
+}
+
+fn upstream_error(
+    service: &'static str,
+    stage: &str,
+    status: Option<u16>,
+    code: Option<&'static str>,
+) -> AppError {
+    worker::console_error!(
+        "{}",
+        serde_json::json!({
+            "event": "upstream_failure",
+            "service": service,
+            "stage": stage,
+            "status": status,
+            "code": code,
+        })
+    );
+    AppError::Upstream
+}
+
+pub async fn fetch_body(
+    req: Request,
+    timeout_ms: u32,
+    cap: usize,
+    service: &'static str,
+) -> Result<Vec<u8>, AppError> {
     let signal: AbortSignal = worker::web_sys::AbortSignal::timeout_with_u32(timeout_ms).into();
     let mut response: Response = Fetch::Request(req)
         .send_with_signal(&signal)
         .await
-        .map_err(|_| AppError::Upstream)?;
+        .map_err(|_| upstream_error(service, "fetch", None, None))?;
     if response.status_code() != 200 {
-        return Err(AppError::Upstream);
+        let status = response.status_code();
+        let mut code = None;
+        if check_length(response.headers(), 4096).is_ok() {
+            if let Ok(stream) = response.stream() {
+                if let Ok(bytes) = read_stream(stream, 4096).await {
+                    code = provider_error_code(&bytes);
+                }
+            }
+        }
+        return Err(upstream_error(service, "http_status", Some(status), code));
     }
-    check_length(response.headers(), cap).map_err(|_| AppError::Upstream)?;
-    read_stream(response.stream().map_err(|_| AppError::Upstream)?, cap)
+    check_length(response.headers(), cap)
+        .map_err(|_| upstream_error(service, "body_length", Some(200), None))?;
+    let stream = response
+        .stream()
+        .map_err(|_| upstream_error(service, "body_stream", Some(200), None))?;
+    read_stream(stream, cap)
         .await
-        .map_err(|_| AppError::Upstream)
+        .map_err(|_| upstream_error(service, "body_read", Some(200), None))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::provider_error_code;
+
+    #[test]
+    fn provider_diagnostics_only_allow_known_codes() {
+        assert_eq!(
+            provider_error_code(br#"{"error":{"type":"FreeTierError","message":"private"}}"#),
+            Some("FreeTierError")
+        );
+        for body in [
+            br#"{"error":{"type":"secret value","message":"private"}}"#.as_slice(),
+            br#"{"error":"private"}"#,
+            b"not json",
+        ] {
+            assert_eq!(provider_error_code(body), None);
+        }
+    }
 }
