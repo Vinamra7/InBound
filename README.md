@@ -77,7 +77,8 @@ in `[vars]` are reapplied by deployment. Sync dashboard changes into that file b
 redeploying. The original free chat IDs returned upstream `403 FreeTierError`, so the
 user approved paid `glm-5.3-flash` for `llm-1` ($0.15/million input tokens and
 $0.50/million output, per current OpenCode docs). Slots 2/3 remain free and unavailable
-in these checks. Verify successful production completion and account billing controls.
+in these checks. The user confirmed a real production `llm-1` reply; quota-cap behavior
+and account billing controls still need separate verification.
 
 ## Repo layout
 

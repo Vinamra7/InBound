@@ -195,7 +195,7 @@ InBound/                         (crate name: inscope)
 │   ├── routes/                thin HTTP layer: parse → pipeline → serialize
 │   │   ├── mod.rs             ✅
 │   │   ├── session.rs         ✅ real browser session creation returns 200; rate-limit cap still needs verification
-│   │   ├── chat.rs            🔧 full §2 flow coded — needs `wrangler dev` run (D1 + classifier + completion)
+│   │   ├── chat.rs            ✅ real browser session → D1 → Jev → paid GLM reply succeeds; quota-cap checks remain in counter.rs
 │   │   ├── cors.rs            🔧 header merge preserves JSON Content-Type; local opt-in; needs runtime preflight/error-header check
 │   │   └── health.rs          ✅ GET /health
 │   ├──
@@ -223,7 +223,7 @@ InBound/                         (crate name: inscope)
 │       ├── clock.rs           ✅ now_secs() + utc_day() (pure civil-date math, unit-tested)
 │       └── llm/
 │           ├── mod.rs         ✅ module wiring
-│           └── opencode.rs    🔧 history-aware noul criteria pass twelve live free-model checks; production completion returns upstream 403 (openrouter.rs removed)
+│           └── opencode.rs    ✅ history-aware Jev + paid GLM production chat verified; twelve live classifier checks pass (openrouter.rs removed)
 │
 ├── tests/                     native unit tests (pure fns only)
 │   ├── error.rs               ✅ AppError status/code
@@ -280,7 +280,8 @@ the full Worker build and Wrangler dry run now pass.
 12. ~~Frontend: send llm-1, request cancellation/deadlines, reset stale-reply guard, preserve session retry state and queued auth resend, cap successful history, preserve over-limit draft, disclose provider sharing~~ ✅ six helper tests + production build; interactive verification pending.
 13. ~~Update smoke payloads for model aliases, hostile roles/turn cap, preflight Authorization and CORS headers; update README/local config/this plan~~ ✅ files reviewed; smoke script execution against Worker pending.
 14. ~~`Cargo.toml`: preserve target_features during release compilation by changing strip=true to strip="debuginfo"~~ ✅ reproduced the catch-wrapper error, verified metadata is preserved, `worker-build --release` and Wrangler 4.151.1 deploy dry run pass.
-15. ~~Add redacted provider diagnostics; replace ambiguous scope question with explicit true/false criteria and validated conversation history~~ ✅ 50 Rust tests and Wasm check pass; twelve live synthetic Jev checks pass. Completion access is a separate unresolved provider issue.
+15. ~~Add redacted provider diagnostics; replace ambiguous scope question with explicit true/false criteria and validated conversation history~~ ✅ 50 Rust tests and Wasm check pass; twelve live synthetic Jev checks pass; user confirms real paid GLM reply after resolving free-tier rejection.
+16. ~~Replace rejected free `llm-1` model with user-approved paid `glm-5.3-flash`~~ ✅ configuration committed/pushed and deployed; live chat returns 200 and user confirms it works.
 
 ---
 
@@ -289,15 +290,15 @@ the full Worker build and Wrangler dry run now pass.
 | Area (weight) | Module | % | Remaining |
 |---|---|---|---|
 | Domain (15) | message/model aliases, token, edge/risk, fingerprint | 100 | pure tests pass |
-| Adapters (25) | edge/clock, http, Turnstile, D1 counter, OpenCode | 90 | Turnstile works; completion access, D1 cap semantics and fetch deadlines remain |
+| Adapters (25) | edge/clock, http, Turnstile, D1 counter, OpenCode | 95 | Turnstile/classifier/completion work; D1 cap semantics and fetch deadlines remain |
 | Pipeline (15) | validate/auth/risk/limits | 100 | done |
-| Routes (15) | routing, session/chat, CORS/OPTIONS | 92 | real session/preflight pass; successful completion and quota-cap checks remain |
-| Frontend (15) | helpers, ContactTerminal, ChatVerification | 87 | browser session and canned response work; real completion/401/reset/shortcut interaction remain |
-| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 78 | Worker deployed, secrets present, browser reaches API; OpenCode completion access, WAF and quota checks remain |
+| Routes (15) | routing, session/chat, CORS/OPTIONS | 96 | real session/preflight/completion pass; quota-cap checks remain |
+| Frontend (15) | helpers, ContactTerminal, ChatVerification | 93 | real chat works and history payload verified; 401/reset/shortcut interaction remain |
+| Infra & deploy (15) | schema, vars, Wrangler, smoke, docs | 87 | Worker and paid model deployed, real chat works; WAF, quota and billing-control checks remain |
 
-**Overall: ~90% (estimate).** Worker deployment and public health/preflight checks pass.
-Browser session creation works, but OpenCode chat completion access and end-to-end quota verification remain.
-This is not yet a claim that the chat is ready for public use.
+**Overall: ~95% (estimate).** Real browser session creation and a paid GLM chat reply work.
+WAF setup, quota-cap/concurrency checks, account spending controls and remaining UI interaction
+checks are still pending; successful chat alone does not verify those controls.
 
 ### Verification (2026-10-19)
 - `cargo test`: **50 passed**, no failures, including provider-error redaction and classifier history/current-message separation tests.
@@ -312,12 +313,14 @@ This is not yet a claim that the chat is ready for public use.
 - Agent public checks: both API `/health` URLs return **200 {"ok":true}**. Primary API health preserves JSON Content-Type and allowed-origin CORS; primary-origin chat OPTIONS returns **204**, allows Content-Type and Authorization. These endpoints do not exercise secrets, D1 or the provider.
 - User HAR/browser checks: session **200**, www-origin preflights **204**, valid `llm-1` chat request **502**. A later browser request returned **200** with the canned scope rejection for an on-topic introduction; another returned **502**. After the classifier/history fix, the latest message passes Jev and reaches `openai/v1/chat/completions`, which returns **403 `FreeTierError`**; no Worker exception.
 - Reproduced the original classifier false rejection using keyless `jev-1.13-free` (intro probability 0.31). Explicit criteria plus structured history pass **12/12** live synthetic checks: introduction/current job/greeting/skills/thanks accepted; unrelated coding/name-bait/prompt injection rejected; "explain that" and "tell me more" accepted after an answer about Cacher; topic switches and follow-ups on unrelated content rejected. Introduction and job probabilities are 0.96. No account credits or API key used; this small sample is not a universal accuracy guarantee.
-- Separate keyless free-chat probes for **all three configured chat IDs** return **403 `FreeTierError`**. Production `llm-1` independently returns the same type with the configured API key. The provider's exact eligibility policy/account setting has not been verified; do not claim a paid balance enables these free IDs.
+- Separate keyless free-chat probes for **all three original free chat IDs** return **403 `FreeTierError`**. The original free `llm-1` independently returned the same type with the configured API key. The provider's exact eligibility policy/account setting has not been verified; do not claim a paid balance enables these free IDs.
 - Updated Worker deployed as version `b0b4f609-80e3-4a2a-aa2b-f46055bc44f0`, from pushed commit `6df853c`. Latest full release build/dry run pass (483.84 KiB / gzip 155.66 KiB); unauthenticated chat returns **401** with www-origin CORS. User's retry confirms the classifier no longer rejects the introduction; completion is still blocked by OpenCode free-tier access.
 - Additional frontend payload check: all **10 user/assistant exchanges plus "Explain that"** are sent unchanged as 21 messages. Code review confirms the chat completion prepends the server prompt and preserves those exchanges; Jev receives the same history separately from the latest message.
-- Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()`/cap integration, or successful production completion. Real browser session succeeds and chat reaches the provider after D1; exact quota cap behavior remains unverified. No paid inference performed.
+- Paid-model config committed/pushed as `1eaaff7` and deployed as Worker version `9b3f2d78-c92a-45fe-baf4-045eb9a3e5b9`. User's live retry returns **200 with no Worker exception**, and the user confirms **"worked"**. This verifies production session/D1 admission/Jev/paid GLM/browser reply together. The user authorized this paid model before the change. The separate follow-up behavior has synthetic live classifier coverage; it was not independently confirmed in the browser.
+- Not run by the agent: `wrangler dev` or D1 batch concurrency/`changes()`/cap integration. Exact quota-cap behavior and provider spending controls remain unverified.
 
 ### Review log
+- 2026-10-19 — Paid GLM 5.3 Flash deployed from `1eaaff7`; live chat returns 200 with no Worker exception and user confirms it works. Completion access blocker resolved. WAF, quota-cap/concurrency and spending-control checks remain; no claim that those are verified.
 - 2026-10-19 — User explicitly approved paid GLM 5.3 Flash for `llm-1` after confirmed `FreeTierError` failures. Updated `LLM_1_MODEL` to `glm-5.3-flash` in Wrangler and docs; API format stays `chat_completions`. Runtime completion verification is pending.
 - 2026-10-19 — Committed/pushed classifier, history and safe diagnostic changes (`6df853c`), deployed them, and deleted user-supplied `testrun.har` as requested. Live retry identifies the remaining upstream failure as **403 `FreeTierError`**. User preference requested before replacing a free model with paid GLM 5.3 Flash; current three slots and Cloudflare variables remain unchanged.
 - 2026-10-19 — Diagnosed user HAR and live browser retries. Added safe upstream stage/status/error-type diagnostics without request data or raw error bodies. Reproduced and corrected a Jev false rejection with explicit noul criteria. At the user's request, Jev now receives the validated prior conversation and latest message separately; twelve live free-model cases pass, including contextual follow-ups. Verified UI → Worker → chat LLM already passes the same bounded user/assistant history plus the server prompt. Session/CORS work; completion upstream 403 remains the deployment blocker. WAF is still not configured.
@@ -334,7 +337,7 @@ This is not yet a claim that the chat is ready for public use.
 1. ~~Implementation fixes in §7~~ ✅ offline checks pass; integration caveats remain above.
 2. ~~Infra files, real D1 id/schema, release build and deploy dry run~~ ✅ database `inscope`, binding `DB`; copy `.dev.vars.example` → `.dev.vars` for local checks.
 3. `wrangler dev` + `scripts/smoke.sh` — verify session + chat + counter `changes()` gate on D1.
-4. Configure OpenCode service-account `LLM_API_KEY` and verify one real Jev + llm-1 exchange, only when live inference testing is authorized. Check free-model access and account spending controls.
+4. ~~Configure OpenCode service-account `LLM_API_KEY` and verify one real Jev + llm-1 exchange~~ ✅ user confirmed paid GLM reply. Verify account spending controls separately; free chat slots remain unusable in the provider checks.
 5. Test real frontend session creation, one 401 resend, Reset during a request, daily-limit shortcuts, and preflight from each real UI origin.
 6. Worker is deployed. Finish production secrets, all Turnstile hostnames, Vercel public URLs / mock off and real-host chat checks; configure any additional WAF rule separately. Preserve dashboard model settings when redeploying (§3a).
 
@@ -354,19 +357,19 @@ to `C:\vinamra_portfolio`. References describe the reviewed working files.
 | Turnstile action | `src/adapters/turnstile.rs:26` requires session | `components/ChatVerification.js:34` sends session | MATCH |
 | Session shape | `src/domain/token.rs:17`, `src/routes/session.rs:73` | `lib/inscope.js:207`, `lib/inscope.js:219` | MATCH; token + numeric expires_at |
 | Chat shape | `src/domain/message.rs:12`, `src/domain/message.rs:46` | `lib/inscope.js:246`, `lib/inscope.js:255`, `lib/inscope.js:289` | MATCH; required model + messages, reply/usage |
-| Model aliases | `src/domain/message.rs:18`, `src/config.rs:96` allowlist/config resolution | `components/ContactTerminal.js:396` always llm-1 | MATCH; other slots available to future UI, raw IDs rejected |
+| Model aliases | `src/domain/message.rs:18`, `src/config.rs:96` allowlist/config resolution | `components/ContactTerminal.js:396` always llm-1 | MATCH; other slots reserved for future UI, raw IDs rejected |
 | Roles | `src/domain/message.rs:61`, `src/pipeline/validate.rs:18` user/assistant, agent alias; system rejected | `components/ContactTerminal.js:384`, `components/ContactTerminal.js:400` user/assistant only | MATCH |
 | Length/history | `src/domain/message.rs:3`, `src/pipeline/validate.rs:4` role limits, 21 messages / 40 KB | `components/ContactTerminal.js:21`, `components/ContactTerminal.js:49`, `lib/inscope.js:250` | MATCH; UI intentionally stricter at 500 chars/5 lines, 3000 assistant bytes |
 | Error codes | `src/error.rs:23`, `src/error.rs:36` stable status/code pairs | `lib/inscope.js:282`, `components/ContactTerminal.js:316` status-driven messages/locks | MATCH; timeout/network/config remain local UI errors |
-| CORS | `src/routes/cors.rs:5` origins + Content-Type/Authorization, no credentials | `lib/inscope.js:204`, `lib/inscope.js:271` direct JSON fetch + bearer | MATCH; primary-origin OPTIONS verified, browser session still pending |
+| CORS | `src/routes/cors.rs:5` origins + Content-Type/Authorization, no credentials | `lib/inscope.js:204`, `lib/inscope.js:271` direct JSON fetch + bearer | MATCH; primary/www preflight and real www browser session/chat verified |
 | Token transport | `src/pipeline/auth.rs:9` Authorization bearer only | `lib/inscope.js:108`, `lib/inscope.js:275` sessionStorage + bearer | MATCH; no cookies |
 | Expiry/retry | `src/domain/token.rs:68` HMAC before payload parse + expiry check | `lib/inscope.js:101`, `components/ContactTerminal.js:318`, `components/ContactTerminal.js:367` 60s grace + one retry | MATCH; interactive retry unverified |
-| Private classifier | `src/routes/chat.rs:50`, `src/adapters/llm/opencode.rs:151` config-only native noul | `lib/inscope.js:255` no classifier selector | MATCH |
+| Private classifier | `src/routes/chat.rs:44`, `src/adapters/llm/opencode.rs:182` config-only native noul with validated conversation history | `lib/inscope.js:255` no classifier selector | MATCH |
 
 ### Remaining deployment blockers / checks
 
 - **D1 resource/schema configured — `wrangler.toml:12`:** user-created database `inscope` with its real UUID; binding `DB` matches `src/routes/chat.rs:41`. User confirmed remote schema import succeeded. Verify Worker runtime access and quota behavior before launch.
-- **Blocker — live access:** configure production Turnstile/HMAC/OpenCode secrets and actual Vercel fallback URL; verify real widget hostnames and OpenCode service-account inference access. Offline tests cannot establish these.
+- **Resolved — primary-host live access:** real browser Turnstile/session/paid GLM reply succeeds. Test the fallback UI/API host pair independently; slots 2/3 remain free and rejected in provider probes, so defer exposing them until their access works.
 - **Required runtime verification — `src/adapters/counter.rs:43`:** run `wrangler dev`, exhaust one device's limit and compare D1 user/global rows before/after the denied request. Also send concurrent admitted requests and check neither cap is exceeded. Native tests do not prove D1 connection-local `changes()` behavior.
 - **Required runtime verification — HTTP/UI:** run `sh scripts/smoke.sh` against local Worker (public validation/auth/CORS paths only, no LLM). Test actual allowed-origin preflight, 401 re-verification/resend, Reset during pending chat, 429/503 shortcuts and session timeout in a browser. Verify fetch deadlines in the Workers runtime and free-tier CPU time in observability.
 - **Required account verification:** check rate-limit binding behavior on both API hosts, WAF plan/rule availability, free-model access/pricing and account spending controls. A Go subscription plus credit does not itself prove API access or a spending cap.
