@@ -2,8 +2,8 @@ use worker::{Context, Env, Method, Request, Response, event};
 
 pub mod adapters;
 pub mod config;
+pub mod constants;
 pub mod domain;
-pub mod durable;
 pub mod error;
 pub mod pipeline;
 pub mod routes;

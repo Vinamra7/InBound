@@ -1,10 +1,9 @@
 use serde::Deserialize;
 
+use crate::constants::{SITE_HOST, SITEVERIFY_URL, TURNSTILE_ACTION};
 use crate::error::AppError;
 use worker::wasm_bindgen::JsValue;
 use worker::{Fetch, Headers, Method, Request, RequestInit};
-
-const SITEVERIFY: &str = "https://challenges.cloudflare.com/turnstile/v0/siteverify";
 
 #[derive(Debug, Deserialize)]
 pub struct SiteverifyResponse {
@@ -15,8 +14,8 @@ pub struct SiteverifyResponse {
 
 pub fn ok(resp: &SiteverifyResponse) -> bool {
     resp.success
-        && resp.hostname.as_deref() == Some("vinamramishra.dev")
-        && resp.action.as_deref() == Some("session")
+        && resp.hostname.as_deref() == Some(SITE_HOST)
+        && resp.action.as_deref() == Some(TURNSTILE_ACTION)
 }
 
 pub async fn verify(secret: &str, widget_token: &str, ip: &str) -> Result<bool, AppError> {
@@ -35,7 +34,7 @@ pub async fn verify(secret: &str, widget_token: &str, ip: &str) -> Result<bool, 
     init.with_headers(headers);
     init.with_body(Some(JsValue::from_str(&body.to_string())));
 
-    let req = Request::new_with_init(SITEVERIFY, &init).map_err(AppError::from)?;
+    let req = Request::new_with_init(SITEVERIFY_URL, &init).map_err(AppError::from)?;
 
     let mut resp = Fetch::Request(req).send().await?;
 
