@@ -51,9 +51,9 @@ resolves the real model from Cloudflare variables. Raw model names and missing/u
 aliases return 400 before quota writes. The current UI always sends `llm-1`; `/model`
 selection is deferred. Slots are selectable choices, not a fallback chain.
 
-| Slot | Cloudflare model variable | Initial model | API format variable |
+| Slot | Cloudflare model variable | Current model | API format variable |
 |---|---|---|---|
-| `llm-1` | `LLM_1_MODEL` | `deepseek-v4.1-flash-free` | `LLM_1_API=chat_completions` |
+| `llm-1` | `LLM_1_MODEL` | `glm-5.3-flash` (paid) | `LLM_1_API=chat_completions` |
 | `llm-2` | `LLM_2_MODEL` | `glm-5.3-flash-free` | `LLM_2_API=chat_completions` |
 | `llm-3` | `LLM_3_MODEL` | `longcat-2.5-preview-free` | `LLM_3_API=chat_completions` |
 | private classifier | `CLASSIFIER_MODEL` | `jev-1.13-free` | native System One `noul` |
@@ -74,9 +74,10 @@ classifier ID must support this native schema.
 
 Defaults are in `wrangler.toml`. Although `keep_vars=true`, keys explicitly present
 in `[vars]` are reapplied by deployment. Sync dashboard changes into that file before
-redeploying. Free model IDs were found in the public catalog; authenticated access,
-actual inference and account billing controls remain unverified. No paid inference
-calls were made during this change.
+redeploying. The original free chat IDs returned upstream `403 FreeTierError`, so the
+user approved paid `glm-5.3-flash` for `llm-1` ($0.15/million input tokens and
+$0.50/million output, per current OpenCode docs). Slots 2/3 remain free and unavailable
+in these checks. Verify successful production completion and account billing controls.
 
 ## Repo layout
 

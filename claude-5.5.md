@@ -88,18 +88,20 @@ Headers: `Authorization: Bearer <token>`. Body: `{ model: "llm-1", messages: [{r
 
 ### 3a. Cloudflare Model Configuration
 
-| Client slot | Model variable | Initial value | API variable / initial value |
+| Client slot | Model variable | Current value | API variable / current value |
 |---|---|---|---|
-| `llm-1` (current UI choice) | `LLM_1_MODEL` | `deepseek-v4.1-flash-free` | `LLM_1_API=chat_completions` |
+| `llm-1` (current UI choice) | `LLM_1_MODEL` | `glm-5.3-flash` (paid, user approved) | `LLM_1_API=chat_completions` |
 | `llm-2` | `LLM_2_MODEL` | `glm-5.3-flash-free` | `LLM_2_API=chat_completions` |
 | `llm-3` | `LLM_3_MODEL` | `longcat-2.5-preview-free` | `LLM_3_API=chat_completions` |
 | private classifier | `CLASSIFIER_MODEL` | `jev-1.13-free` | fixed native System One / `noul` |
 
-The four initial IDs were found in the public OpenCode model catalog on 2026-10-19.
+The initial free IDs were found in the public OpenCode model catalog on 2026-10-19.
 Jev now passes twelve synthetic scope checks through the free endpoint, without an API key or
-account credits. Production chat completion returns upstream **403 `FreeTierError`**. Separate
-keyless probes of all three configured free chat IDs return the same error. Free-tier
-eligibility needs resolving with OpenCode, or an explicitly approved switch to a paid model.
+account credits. Production chat completion with the original free model returned **403
+`FreeTierError`**, and separate keyless probes rejected all three free chat IDs. The user
+explicitly approved changing `llm-1` to paid `glm-5.3-flash` using their OpenCode credit
+($0.15/million input tokens, $0.50/million output, per current OpenCode docs). Slots 2/3 remain
+free and should not be exposed by a model picker until their provider access works.
 Change variables in Cloudflare **Settings → Variables and Secrets**;
 publish the variable changes. API format must match the chosen model:
 
@@ -316,6 +318,7 @@ This is not yet a claim that the chat is ready for public use.
 - Not run by the agent: `wrangler dev`, D1 batch concurrency/`changes()`/cap integration, or successful production completion. Real browser session succeeds and chat reaches the provider after D1; exact quota cap behavior remains unverified. No paid inference performed.
 
 ### Review log
+- 2026-10-19 — User explicitly approved paid GLM 5.3 Flash for `llm-1` after confirmed `FreeTierError` failures. Updated `LLM_1_MODEL` to `glm-5.3-flash` in Wrangler and docs; API format stays `chat_completions`. Runtime completion verification is pending.
 - 2026-10-19 — Committed/pushed classifier, history and safe diagnostic changes (`6df853c`), deployed them, and deleted user-supplied `testrun.har` as requested. Live retry identifies the remaining upstream failure as **403 `FreeTierError`**. User preference requested before replacing a free model with paid GLM 5.3 Flash; current three slots and Cloudflare variables remain unchanged.
 - 2026-10-19 — Diagnosed user HAR and live browser retries. Added safe upstream stage/status/error-type diagnostics without request data or raw error bodies. Reproduced and corrected a Jev false rejection with explicit noul criteria. At the user's request, Jev now receives the validated prior conversation and latest message separately; twelve live free-model cases pass, including contextual follow-ups. Verified UI → Worker → chat LLM already passes the same bounded user/assistant history plus the server prompt. Session/CORS work; completion upstream 403 remains the deployment blocker. WAF is still not configured.
 - 2026-10-18 — Gemini 4 Argon cross-repo review. Applied: fail-open classifier (was 502/contain-yes), turnstile send→502, chat body cap 8KB→40KB, device_id shape 400 before Turnstile, vercel/localhost into host+origin lists, `ratelimits` `simple` block, health-before-config, JSON 404, numeric D1 binds + get() indexing, 5 more datacenter ASNs, official dummy Turnstile key, deleted dead `AssistantConfig` (+ its tests). **Rejected:** "invented model ids" — all three verified in the live catalog same day.
