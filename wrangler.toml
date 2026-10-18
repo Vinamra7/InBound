@@ -1,6 +1,20 @@
 name = "inscope"
 main = "build/index.js"
 compatibility_date = "2026-10-03"
+workers_dev = true
+
+routes = [
+  { pattern = "api.vinamramishra.dev", custom_domain = true },
+]
+
+[[d1_databases]]
+binding = "DB"
+database_name = "inscope"
+database_id = "<fill after `wrangler d1 create inscope`>"
+
+[[ratelimits]]
+name = "SESSION_LIMITER"
+namespace_id = "1001"
 
 [build]
 command = "cargo install -q \"worker-build@^0.8\" && worker-build --release"

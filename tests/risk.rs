@@ -9,6 +9,7 @@ fn edge(ip: &str, country: Option<&str>, asn: Option<u32>) -> EdgeInfo {
         asn,
         tz: None,
         lang: None,
+        http_protocol: None,
     }
 }
 

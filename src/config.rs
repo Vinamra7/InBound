@@ -1,7 +1,9 @@
 use serde::Deserialize;
 use worker::Env;
 
-pub const CLASSIFIER_MODEL: &str = "openai/gpt-6-luna";
+pub const USER_QUOTA_NORMAL: u32 = 10;
+pub const USER_QUOTA_RESTRICTED: u32 = 2;
+pub const GLOBAL_QUOTA: u32 = 500;
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AssistantConfig {

@@ -83,6 +83,6 @@ impl From<serde_json::Error> for AppError {
 
 impl From<worker::Error> for AppError {
     fn from(_: worker::Error) -> Self {
-        AppError::Upstream
+        AppError::Internal // generic worker failure; adapters map deliberate fetch failures to Upstream
     }
 }

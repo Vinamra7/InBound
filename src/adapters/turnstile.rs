@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-use crate::constants::{SITE_HOST, SITEVERIFY_URL, TURNSTILE_ACTION};
+use crate::constants::{ALLOWED_HOSTS, SITEVERIFY_URL, TURNSTILE_ACTION};
 use crate::error::AppError;
 use worker::wasm_bindgen::JsValue;
 use worker::{Fetch, Headers, Method, Request, RequestInit};
@@ -14,7 +14,10 @@ pub struct SiteverifyResponse {
 
 pub fn ok(resp: &SiteverifyResponse) -> bool {
     resp.success
-        && resp.hostname.as_deref() == Some(SITE_HOST)
+        && resp
+            .hostname
+            .as_deref()
+            .is_some_and(|h| ALLOWED_HOSTS.contains(&h))
         && resp.action.as_deref() == Some(TURNSTILE_ACTION)
 }
 

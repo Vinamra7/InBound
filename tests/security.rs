@@ -14,6 +14,25 @@ fn valid_turnstile_accepted() {
 }
 
 #[test]
+fn www_host_accepted() {
+    assert!(ok(&resp(
+        true,
+        Some("www.vinamramishra.dev"),
+        Some("session")
+    )));
+}
+
+#[test]
+fn vercel_host_not_yet_allowed() {
+    // placeholder list — real slug lands after the first Vercel deploy
+    assert!(!ok(&resp(
+        true,
+        Some("inscope.vercel.app"),
+        Some("session")
+    )));
+}
+
+#[test]
 fn success_false_rejected() {
     assert!(!ok(&resp(
         false,

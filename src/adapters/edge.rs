@@ -21,11 +21,14 @@ pub fn extract(req: &Request) -> EdgeInfo {
 
     let lang = req.headers().get("Accept-Language").ok().flatten();
 
+    let http_protocol = req.cf().map(|cf| cf.http_protocol());
+
     EdgeInfo {
         ip,
         country,
         asn,
         tz,
         lang,
+        http_protocol,
     }
 }

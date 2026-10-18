@@ -1,5 +1,7 @@
 use worker::{Context, Env, Method, Request, Response, event};
 
+use crate::error::AppError;
+
 pub mod adapters;
 pub mod config;
 pub mod constants;
@@ -12,17 +14,32 @@ pub mod routes;
 pub async fn main(req: Request, env: Env, ctx: Context) -> worker::Result<Response> {
     console_error_panic_hook::set_once();
 
+    let origin = req.headers().get("Origin").ok().flatten();
+
+    if req.method() == Method::Options {
+        return Ok(routes::cors::preflight(origin));
+    }
+
     let config = match config::Config::from_env(&env) {
         Ok(c) => c,
-        Err(_) => return Response::error("Internal Server Error", 500),
+        Err(_) => {
+            return Ok(routes::cors::wrap(origin, AppError::Internal.response()));
+        }
     };
 
-    match (req.method(), req.path().as_str()) {
+    let resp = match (req.method(), req.path().as_str()) {
         (Method::Get, "/health") => routes::health::handle_health(req).await,
         (Method::Post, "/api/session") => {
-            routes::session::handle_session(req, config.session, ctx).await
+            routes::session::handle_session(req, config.session, env.clone(), ctx).await
         }
-        (Method::Post, "/api/chat") => routes::chat::handle_chat(req, config.chat, ctx).await,
+        (Method::Post, "/api/chat") => routes::chat::handle_chat(req, config.chat, env, ctx).await,
         _ => Response::error("Not Found", 404),
-    }
+    };
+
+    let resp = match resp {
+        Ok(r) => r,
+        Err(_) => AppError::Internal.response(),
+    };
+
+    Ok(routes::cors::wrap(origin, resp))
 }

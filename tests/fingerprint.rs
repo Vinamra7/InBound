@@ -20,6 +20,14 @@ fn edge(tz: Option<&str>, lang: Option<&str>) -> EdgeInfo {
         asn: Some(55836),
         tz: tz.map(|t| t.to_string()),
         lang: lang.map(|l| l.to_string()),
+        http_protocol: None,
+    }
+}
+
+fn edge_http11(tz: Option<&str>, lang: Option<&str>) -> EdgeInfo {
+    EdgeInfo {
+        http_protocol: Some("HTTP/1.1".to_string()),
+        ..edge(tz, lang)
     }
 }
 
@@ -56,32 +64,65 @@ fn case_folding_forgives_safari_style() {
 }
 
 #[test]
-fn wrong_tz_is_suspicious() {
+fn single_tz_mismatch_is_ok() {
+    // one strike only — VPN / mobile geo drift between browser tz and CF's geo-IP tz is honest
     let e = edge(Some("Asia/Kolkata"), Some("en-IN,en;q=0.9"));
-    let p = payload(DEVICE, "Europe/London", "en-IN");
-    assert_eq!(validate_fingerprint(&p, &e), FpVerdict::Suspicious); // VPN / replayed payload
+    assert_eq!(
+        validate_fingerprint(&payload(DEVICE, "Europe/London", "en-IN"), &e),
+        FpVerdict::Ok
+    );
 }
 
 #[test]
-fn absent_lang_is_suspicious() {
+fn absent_lang_alone_is_ok() {
+    // no Accept-Language = one strike; with a coherent tz that's not enough to restrict
     let e = edge(Some("Asia/Kolkata"), None);
     assert_eq!(
         validate_fingerprint(&payload(DEVICE, "Asia/Kolkata", "en-IN"), &e),
-        FpVerdict::Suspicious
-    ); // curl/Postman send no Accept-Language — refusal avoids spoof-by-omission
+        FpVerdict::Ok
+    );
 }
 
 #[test]
-fn claimed_lang_not_in_header_is_suspicious() {
+fn claimed_lang_not_in_header_alone_is_ok() {
     let e = edge(Some("Asia/Kolkata"), Some("en-IN,en;q=0.9"));
     assert_eq!(
         validate_fingerprint(&payload(DEVICE, "Asia/Kolkata", "en-GB"), &e),
+        FpVerdict::Ok
+    );
+}
+
+#[test]
+fn http1_1_alone_is_ok() {
+    let e = edge_http11(Some("Asia/Kolkata"), Some("en-IN,en;q=0.9"));
+    assert_eq!(
+        validate_fingerprint(&payload(DEVICE, "Asia/Kolkata", "en-IN"), &e),
+        FpVerdict::Ok
+    );
+}
+
+#[test]
+fn two_strikes_are_suspicious() {
+    // tz mismatch + lang mismatch — the classic replayed-payload shape
+    let e = edge(Some("Asia/Kolkata"), Some("en-IN,en;q=0.9"));
+    assert_eq!(
+        validate_fingerprint(&payload(DEVICE, "Europe/London", "en-GB"), &e),
+        FpVerdict::Suspicious
+    );
+}
+
+#[test]
+fn tz_mismatch_plus_http1_1_is_suspicious() {
+    let e = edge_http11(Some("Asia/Kolkata"), Some("en-IN,en;q=0.9"));
+    assert_eq!(
+        validate_fingerprint(&payload(DEVICE, "Europe/London", "en-IN"), &e),
         FpVerdict::Suspicious
     );
 }
 
 #[test]
 fn device_id_must_be_32_lowercase_hex() {
+    // hard fail — a garbage identity is Suspicious even with zero other strikes
     let e = edge(Some("Asia/Kolkata"), Some("en-IN,en;q=0.9"));
 
     let short = payload(&DEVICE[..31], "Asia/Kolkata", "en-IN");

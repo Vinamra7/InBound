@@ -1,8 +1,10 @@
-use inscope::pipeline::limits::remaining_quota;
+use inscope::config::{USER_QUOTA_NORMAL, USER_QUOTA_RESTRICTED};
+use inscope::domain::token::{Q_NORMAL, Q_RESTRICTED};
+use inscope::pipeline::limits::user_limit_for;
 
 #[test]
-fn test_remaining_quota() {
-    assert_eq!(remaining_quota(100, 50), 50);
-    assert_eq!(remaining_quota(100, 100), 0);
-    assert_eq!(remaining_quota(100, 150), 0);
+fn test_user_limit_for() {
+    assert_eq!(user_limit_for(Q_NORMAL), USER_QUOTA_NORMAL);
+    assert_eq!(user_limit_for(Q_RESTRICTED), USER_QUOTA_RESTRICTED);
+    assert_eq!(user_limit_for(99), USER_QUOTA_NORMAL); // unknown tier → full quota
 }
