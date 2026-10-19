@@ -227,10 +227,20 @@ mod tests {
 
     #[test]
     fn each_api_uses_its_native_request_shape() {
-        let history = [Message {
-            role: Role::User,
-            content: "Work?".into(),
-        }];
+        let history = [
+            Message {
+                role: Role::User,
+                content: "Work?".into(),
+            },
+            Message {
+                role: Role::Assistant,
+                content: "He works at Visa.".into(),
+            },
+            Message {
+                role: Role::User,
+                content: "Explain that".into(),
+            },
+        ];
         let model = ModelConfig {
             model: "configured-model".into(),
             api: ChatApi::ChatCompletions,
@@ -238,6 +248,11 @@ mod tests {
         let body = completion_request(&model, "private facts", &history);
         assert_eq!(body["messages"][0]["role"], "system");
         assert_eq!(body["model"], "configured-model");
+        assert_eq!(
+            body["messages"].as_array().unwrap()[1..],
+            json!(history).as_array().unwrap()[..]
+        );
+        assert_eq!(body["max_tokens"], REPLY_MAX_TOKENS);
         assert!(body.get("stream").is_none());
         let model = ModelConfig {
             api: ChatApi::Responses,
@@ -245,7 +260,8 @@ mod tests {
         };
         let body = completion_request(&model, "private facts", &history);
         assert_eq!(body["instructions"], "private facts");
-        assert_eq!(body["input"][0]["role"], "user");
+        assert_eq!(body["input"], json!(history));
+        assert_eq!(body["max_output_tokens"], REPLY_MAX_TOKENS);
         assert!(body.get("messages").is_none());
         assert_eq!(body["store"], false);
     }
